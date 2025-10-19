@@ -13,11 +13,17 @@ const PATTERNS = [
 
 const DEFAULT_CHORD = [60, 64, 67, 71]; // Cmaj7
 
+const NOTES_PER_MEASURE = 8;
+const TICKS_PER_QUARTER = 480;
+const TICKS_PER_EIGHTH = TICKS_PER_QUARTER / 2;
+const EMPTY_MIDI_LINE = { events: [], measures: 0, totalTicks: 0 };
+
 const state = {
   patternGroups: [],
   seedPattern: null,
   chords: [],
   lineNotes: [],
+  midiLine: EMPTY_MIDI_LINE,
   midiAccess: null,
   midiArmed: false,
   captureQueue: [],
@@ -123,6 +129,18 @@ function rebuildLineNotes() {
     });
   }
   state.lineNotes = notes;
+  state.midiLine = convertLineToMidi(notes);
+}
+
+function convertLineToMidi(notes) {
+  const events = notes.map((note, index) => ({
+    note,
+    startTicks: index * TICKS_PER_EIGHTH,
+    durationTicks: TICKS_PER_EIGHTH
+  }));
+  const measures = Math.ceil(notes.length / NOTES_PER_MEASURE);
+  const totalTicks = events.length ? events[events.length - 1].startTicks + TICKS_PER_EIGHTH : 0;
+  return { events, measures, totalTicks };
 }
 
 function renderMatrix() {
@@ -185,7 +203,8 @@ function createVexFlowNote(VF, note) {
 
 function renderStaff() {
   elements.staff.innerHTML = "";
-  const totalNotes = state.lineNotes.length;
+  const midiLine = state.midiLine || { events: [], measures: 0 };
+  const totalNotes = midiLine.events.length;
   if (!totalNotes) {
     const empty = document.createElement("p");
     empty.textContent = "La partitura aparecerá al generar una línea.";
@@ -201,8 +220,8 @@ function renderStaff() {
     return;
   }
 
-  const notesPerMeasure = 8;
-  const measures = Math.ceil(totalNotes / notesPerMeasure);
+  const notesPerMeasure = NOTES_PER_MEASURE;
+  const measures = midiLine.measures;
   const measuresPerRow = Math.min(3, measures);
   const staveWidth = 260;
   const measureGap = 28;
@@ -239,8 +258,8 @@ function renderStaff() {
 
     const sliceStart = measureIndex * notesPerMeasure;
     const sliceEnd = sliceStart + notesPerMeasure;
-    const measureNotes = state.lineNotes.slice(sliceStart, sliceEnd);
-    const vexNotes = measureNotes.map((note) => createVexFlowNote(VF, note));
+    const measureEvents = midiLine.events.slice(sliceStart, sliceEnd);
+    const vexNotes = measureEvents.map((event) => createVexFlowNote(VF, event.note));
     while (vexNotes.length < notesPerMeasure) {
       vexNotes.push(new VF.StaveNote({ keys: ["b/4"], duration: "8r" }));
     }
@@ -308,6 +327,7 @@ function handleGenerate() {
 function clearPatterns() {
   state.patternGroups = [];
   state.lineNotes = [];
+  state.midiLine = EMPTY_MIDI_LINE;
   renderMatrix();
   renderStaff();
   setStatus("Patrones limpiados.");
@@ -344,27 +364,29 @@ function stopPlayback() {
 }
 
 function playLine() {
-  if (!state.lineNotes.length) {
+  const midiLine = state.midiLine;
+  if (!midiLine.events.length) {
     setStatus("No hay línea para reproducir.");
     return;
   }
   const audioCtx = ensureAudioContext();
   const now = audioCtx.currentTime;
   const bpm = Number(elements.tempo.value);
-  const eighthDuration = 60 / bpm / 2;
+  const secondsPerTick = (60 / bpm) / TICKS_PER_QUARTER;
   stopPlayback();
-  state.lineNotes.forEach((note, index) => {
-    const start = now + index * eighthDuration;
+  midiLine.events.forEach((event) => {
+    const start = now + event.startTicks * secondsPerTick;
+    const duration = event.durationTicks * secondsPerTick;
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
     osc.type = "sine";
-    osc.frequency.value = midiToFrequency(note);
+    osc.frequency.value = midiToFrequency(event.note);
     gain.gain.setValueAtTime(0, start);
     gain.gain.linearRampToValueAtTime(0.7, start + 0.01);
-    gain.gain.linearRampToValueAtTime(0.0, start + eighthDuration * 0.9);
+    gain.gain.linearRampToValueAtTime(0.0, start + duration * 0.9);
     osc.connect(gain).connect(audioCtx.destination);
     osc.start(start);
-    osc.stop(start + eighthDuration);
+    osc.stop(start + duration);
     state.scheduledNodes.push(osc);
   });
   setStatus("Reproduciendo línea.");
