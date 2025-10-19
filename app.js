@@ -12,6 +12,7 @@ const PATTERNS = [
 ].map((text) => ({ id: text, values: text.split("").map(Number) }));
 
 const DEFAULT_CHORD = [60, 64, 67, 71]; // Cmaj7
+const DEFAULT_BPM = 240;
 
 const NOTES_PER_MEASURE = 8;
 const TICKS_PER_QUARTER = 480;
@@ -52,6 +53,13 @@ const elements = {
   themeToggle: document.getElementById("theme-toggle")
 };
 
+if (elements.tempo) {
+  elements.tempo.value = String(DEFAULT_BPM);
+}
+if (elements.tempoValue) {
+  elements.tempoValue.textContent = `${DEFAULT_BPM} BPM`;
+}
+
 function setStatus(message) {
   elements.status.textContent = message;
 }
@@ -82,10 +90,12 @@ function toggleTheme() {
 elements.themeToggle.addEventListener("click", toggleTheme);
 restoreTheme();
 
-elements.tempo.addEventListener("input", (event) => {
-  const bpm = Number(event.target.value);
-  elements.tempoValue.textContent = `${bpm} BPM`;
-});
+if (elements.tempo) {
+  elements.tempo.addEventListener("input", (event) => {
+    const bpm = Number(event.target.value);
+    elements.tempoValue.textContent = `${bpm} BPM`;
+  });
+}
 
 function randomChoice(list) {
   return list[Math.floor(Math.random() * list.length)];
@@ -339,7 +349,7 @@ function exportMidi() {
     setStatus("No hay línea para exportar.");
     return;
   }
-  const bpm = Number(elements.tempo.value) || 120;
+  const bpm = Number(elements.tempo.value) || DEFAULT_BPM;
   const data = createMidiFile(midiLine, bpm);
   const blob = new Blob([data], { type: "audio/midi" });
   const url = URL.createObjectURL(blob);
@@ -446,7 +456,7 @@ function playLine() {
   }
   const audioCtx = ensureAudioContext();
   const now = audioCtx.currentTime;
-  const bpm = Number(elements.tempo.value);
+  const bpm = Number(elements.tempo.value) || DEFAULT_BPM;
   const secondsPerTick = (60 / bpm) / TICKS_PER_QUARTER;
   stopPlayback();
   midiLine.events.forEach((event) => {
@@ -489,15 +499,23 @@ function onNoteOn(note) {
   const uniqueNotes = Array.from(uniqueMap.values())
     .sort((a, b) => a.time - b.time)
     .slice(-4);
-  if (uniqueNotes.length === 4) {
-    const chord = uniqueNotes.map((item) => item.note).sort((a, b) => a - b);
+  if (uniqueNotes.length >= 3) {
+    const capturedNotes = uniqueNotes.map((item) => item.note);
+    if (capturedNotes.length === 3) {
+      capturedNotes.push(capturedNotes[0]);
+    }
+    const chord = capturedNotes.slice(-4);
     state.chords.push(chord);
     renderChords();
     const adjusted = ensureValidPatternsAfterCapture();
     if (!adjusted) {
       rebuildLineNotes();
     }
-    const baseMessage = `Acorde capturado: ${chord.map(noteNumberToName).join(" ")}`;
+    const originalLength = uniqueNotes.length;
+    const baseMessage =
+      originalLength === 3
+        ? `Acorde capturado (3 notas, primera duplicada): ${chord.map(noteNumberToName).join(" ")}`
+        : `Acorde capturado: ${chord.map(noteNumberToName).join(" ")}`;
     setStatus(
       adjusted
         ? `${baseMessage}. Patrones ajustados para evitar notas consecutivas repetidas.`
@@ -553,7 +571,7 @@ async function toggleMidiLearn() {
       const hasInputs = state.midiAccess && state.midiAccess.inputs.size > 0;
       setStatus(
         hasInputs
-          ? "MIDI Learn encendido. Captura acordes de 4 notas para generar líneas."
+          ? "MIDI Learn encendido. Captura acordes de 4 notas (o 3, duplicando la primera)."
           : "MIDI Learn encendido. No se detectan entradas MIDI."
       );
     } else {

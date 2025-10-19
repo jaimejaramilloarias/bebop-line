@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Voicing Lines — Jaime Jaramillo Arias</title>
+    <title>Bebop Line - Jaime Jaramillo Arias</title>
     <link rel="stylesheet" href="styles.css" />
     <link
       rel="icon"
@@ -13,7 +13,7 @@
   </head>
   <body>
     <header class="app-header">
-      <h1>Voicing Lines Generator — Jaime Jaramillo Arias</h1>
+      <h1>Bebop Line - Jaime Jaramillo Arias</h1>
       <button id="theme-toggle" class="theme-toggle" aria-label="Alternar tema" title="Alternar tema claro/oscuro">
         🌗
       </button>
@@ -63,8 +63,8 @@
         </div>
         <div class="control-group playback">
           <label for="tempo" class="tempo-label" title="Ajustar tempo en BPM">Tempo</label>
-          <input id="tempo" type="range" min="40" max="320" value="120" />
-          <span id="tempo-value" aria-live="polite">120 BPM</span>
+          <input id="tempo" type="range" min="40" max="320" value="240" />
+          <span id="tempo-value" aria-live="polite">240 BPM</span>
           <button id="play-line" class="primary" title="Reproducir línea generada">Reproducir</button>
           <button id="stop-line" title="Detener reproducción">Detener</button>
           <button id="export-midi" title="Exportar la línea como archivo MIDI">Exportar MIDI</button>
@@ -73,14 +73,6 @@
         <div class="captured-chords" aria-live="polite" aria-label="Acordes capturados"></div>
       </section>
     </main>
-
-    <footer>
-      <p>
-        Genera líneas melódicas con patrones de voicings, practica sobre tus acordes y
-        mantén transiciones válidas. Utiliza las miniaturas como semilla y captura acordes
-        con MIDI Learn continuo.
-      </p>
-    </footer>
 
     <div id="status" class="sr-only" aria-live="assertive"></div>
 
