@@ -576,6 +576,11 @@ function generateFromChords() {
   setStatus(`Línea generada para ${state.chords.length} acordes.`);
 }
 
+function isIntervalWithinMajorSeventh(noteA, noteB) {
+  const interval = Math.abs(noteA - noteB);
+  return interval <= 11;
+}
+
 function patternsHaveValidBoundaries(groups, chords) {
   if (!groups.length) return true;
   for (let i = 0; i < groups.length - 1; i++) {
@@ -585,7 +590,7 @@ function patternsHaveValidBoundaries(groups, chords) {
     const nextChord = chords[i + 1] || DEFAULT_CHORD;
     const lastNote = getNoteFromChordVoice(currentPattern.values[3], currentChord);
     const firstNoteNext = getNoteFromChordVoice(nextPattern.values[0], nextChord);
-    if (lastNote === firstNoteNext) {
+    if (lastNote === firstNoteNext || !isIntervalWithinMajorSeventh(lastNote, firstNoteNext)) {
       return false;
     }
   }
