@@ -32,7 +32,7 @@
 
       <section class="catalog" aria-labelledby="catalog-title">
         <div class="section-title" id="catalog-title">Catálogo de patrones</div>
-        <div class="catalog-grid" role="list" aria-label="Patrones disponibles">
+        <div class="catalog-collections" role="list" aria-label="Patrones disponibles">
           <!-- Patrones insertados dinámicamente -->
         </div>
       </section>
@@ -69,6 +69,17 @@
           <button id="stop-line" title="Detener reproducción">Detener</button>
           <button id="export-midi" title="Exportar la línea como archivo MIDI">Exportar MIDI</button>
           <button id="clear-chords" title="Eliminar acordes capturados">Borrar acordes</button>
+        </div>
+        <div class="control-group midi-output">
+          <label for="midi-output" title="Enviar la reproducción a un puerto MIDI externo">MIDI Out</label>
+          <select
+            id="midi-output"
+            title="Seleccionar un puerto MIDI de salida para reproducir la línea"
+            aria-label="Puerto MIDI de salida"
+          >
+            <option value="">Reproducción interna (WebAudio)</option>
+          </select>
+          <button id="refresh-midi-outputs" title="Actualizar la lista de puertos MIDI disponibles">Actualizar</button>
         </div>
         <div class="captured-chords" aria-live="polite" aria-label="Acordes capturados"></div>
       </section>
