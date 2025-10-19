@@ -615,11 +615,6 @@ function patternsHaveValidBoundaries(groups, chords) {
   return true;
 }
 
-function isChordWithDuplicatedNote(chord) {
-  const uniqueNotes = new Set(chord);
-  return uniqueNotes.size === 3;
-}
-
 function patternHasConsecutiveDuplicateNotes(pattern, chord) {
   const sortedChord = getSortedChord(chord);
   const notes = pattern.values.map((voice) => getNoteFromSortedChordVoice(voice, sortedChord));
@@ -632,11 +627,16 @@ function patternHasConsecutiveDuplicateNotes(pattern, chord) {
 }
 
 function sequenceAvoidsConsecutiveDuplicateNotes(sequence, chords) {
+  let previousNote = null;
   for (let i = 0; i < sequence.length; i++) {
     const chord = chords[i] || DEFAULT_CHORD;
-    if (!isChordWithDuplicatedNote(chord)) continue;
-    if (patternHasConsecutiveDuplicateNotes(sequence[i], chord)) {
-      return false;
+    const sortedChord = getSortedChord(chord);
+    for (const voice of sequence[i].values) {
+      const note = getNoteFromSortedChordVoice(voice, sortedChord);
+      if (previousNote !== null && note === previousNote) {
+        return false;
+      }
+      previousNote = note;
     }
   }
   return true;
@@ -649,7 +649,7 @@ function buildSequenceWithConstraints(chords, seed, enforceSeed) {
 
   function isPatternValidAtIndex(pattern, index) {
     const chord = chords[index] || DEFAULT_CHORD;
-    if (isChordWithDuplicatedNote(chord) && patternHasConsecutiveDuplicateNotes(pattern, chord)) {
+    if (patternHasConsecutiveDuplicateNotes(pattern, chord)) {
       return false;
     }
     if (index === 0) return true;
