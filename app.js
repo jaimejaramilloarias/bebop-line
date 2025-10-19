@@ -121,14 +121,27 @@ function rebuildLineNotes() {
   for (let i = 0; i < totalGroups; i++) {
     const pattern = state.patternGroups[i];
     const chord = state.chords[i] || DEFAULT_CHORD;
-    const sortedChord = [...chord].sort((a, b) => a - b);
+    const sortedChord = getSortedChord(chord);
     pattern.values.forEach((voice) => {
-      const index = Math.min(Math.max(voice - 1, 0), sortedChord.length - 1);
-      notes.push(sortedChord[index]);
+      notes.push(getNoteFromSortedChordVoice(voice, sortedChord));
     });
   }
   state.lineNotes = notes;
   state.midiLine = convertLineToMidi(notes);
+}
+
+function getSortedChord(chord) {
+  return [...chord].sort((a, b) => a - b);
+}
+
+function getNoteFromChordVoice(voice, chord) {
+  const sortedChord = getSortedChord(chord);
+  return getNoteFromSortedChordVoice(voice, sortedChord);
+}
+
+function getNoteFromSortedChordVoice(voice, sortedChord) {
+  const index = Math.min(Math.max(voice - 1, 0), sortedChord.length - 1);
+  return sortedChord[index];
 }
 
 function convertLineToMidi(notes) {
@@ -480,8 +493,16 @@ function onNoteOn(note) {
     const chord = uniqueNotes.map((item) => item.note).sort((a, b) => a - b);
     state.chords.push(chord);
     renderChords();
-    rebuildLineNotes();
-    setStatus(`Acorde capturado: ${chord.map(noteNumberToName).join(" ")}`);
+    const adjusted = ensureValidPatternsAfterCapture();
+    if (!adjusted) {
+      rebuildLineNotes();
+    }
+    const baseMessage = `Acorde capturado: ${chord.map(noteNumberToName).join(" ")}`;
+    setStatus(
+      adjusted
+        ? `${baseMessage}. Patrones ajustados para evitar notas consecutivas repetidas.`
+        : baseMessage
+    );
     state.awaitingRelease = true;
     state.captureQueue = [];
   }
@@ -550,9 +571,48 @@ function generateFromChords() {
     setStatus("Captura acordes para generar la línea.");
     return;
   }
-  const groups = generateSequence(state.chords.length, state.seedPattern);
+  const groups = generateValidSequenceForChords(state.chords, state.seedPattern);
   updatePatternGroups(groups);
   setStatus(`Línea generada para ${state.chords.length} acordes.`);
+}
+
+function patternsHaveValidBoundaries(groups, chords) {
+  if (!groups.length) return true;
+  for (let i = 0; i < groups.length - 1; i++) {
+    const currentPattern = groups[i];
+    const nextPattern = groups[i + 1];
+    const currentChord = chords[i] || DEFAULT_CHORD;
+    const nextChord = chords[i + 1] || DEFAULT_CHORD;
+    const lastNote = getNoteFromChordVoice(currentPattern.values[3], currentChord);
+    const firstNoteNext = getNoteFromChordVoice(nextPattern.values[0], nextChord);
+    if (lastNote === firstNoteNext) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function generateValidSequenceForChords(chords, seed) {
+  const count = chords.length;
+  if (!count) return [];
+  const maxAttempts = 500;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const sequence = generateSequence(count, seed);
+    if (patternsHaveValidBoundaries(sequence, chords)) {
+      return sequence;
+    }
+  }
+  return generateSequence(count, seed);
+}
+
+function ensureValidPatternsAfterCapture() {
+  if (!state.patternGroups.length) return false;
+  if (state.patternGroups.length !== state.chords.length) return false;
+  if (patternsHaveValidBoundaries(state.patternGroups, state.chords)) return false;
+  const sequence = generateValidSequenceForChords(state.chords, state.seedPattern);
+  if (!sequence.length) return false;
+  updatePatternGroups(sequence);
+  return true;
 }
 
 function attachEvents() {
