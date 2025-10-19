@@ -217,18 +217,19 @@ function renderStaff() {
     const y = bottomLineY - offset * stepHeight;
 
     const noteHead = document.createElementNS(svgNS, "ellipse");
-    noteHead.setAttribute("cx", `${x}`);
-    noteHead.setAttribute("cy", `${y}`);
+    noteHead.setAttribute("cx", String(x));
+    noteHead.setAttribute("cy", String(y));
     noteHead.setAttribute("rx", "6.5");
     noteHead.setAttribute("ry", "4.5");
     noteHead.setAttribute("fill", "currentColor");
     svg.appendChild(noteHead);
 
     const stem = document.createElementNS(svgNS, "line");
-    stem.setAttribute("x1", `${x + 6}");
-    stem.setAttribute("x2", `${x + 6}");
-    stem.setAttribute("y1", `${y}`);
-    stem.setAttribute("y2", `${y - 28}`);
+    const stemX = x + 6;
+    stem.setAttribute("x1", String(stemX));
+    stem.setAttribute("x2", String(stemX));
+    stem.setAttribute("y1", String(y));
+    stem.setAttribute("y2", String(y - 28));
     stem.setAttribute("stroke", "currentColor");
     stem.setAttribute("stroke-width", "1.3");
     svg.appendChild(stem);
@@ -238,10 +239,10 @@ function renderStaff() {
     const staffBottom = bottomLineY + stepHeight * 2;
     if (y < staffTop || y > staffBottom) {
       const ledger = document.createElementNS(svgNS, "line");
-      ledger.setAttribute("x1", `${x - 10}`);
-      ledger.setAttribute("x2", `${x + 10}`);
-      ledger.setAttribute("y1", `${y}`);
-      ledger.setAttribute("y2", `${y}`);
+      ledger.setAttribute("x1", String(x - 10));
+      ledger.setAttribute("x2", String(x + 10));
+      ledger.setAttribute("y1", String(y));
+      ledger.setAttribute("y2", String(y));
       ledger.setAttribute("stroke", "currentColor");
       ledger.setAttribute("stroke-width", "1");
       svg.appendChild(ledger);
