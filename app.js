@@ -44,11 +44,15 @@ const state = {
   awaitingRelease: false,
   activeNotes: new Set(),
   scheduledNodes: [],
+  scheduledTimeouts: [],
+  activePlaybackNotes: new Set(),
+  playingMidiOutputId: null,
+  selectedMidiOutputId: "",
   audioCtx: null
 };
 
 const elements = {
-  catalog: document.querySelector(".catalog-grid"),
+  catalog: document.querySelector(".catalog-collections"),
   matrix: document.querySelector(".matrix"),
   generate: document.getElementById("generate-patterns"),
   clear: document.getElementById("clear-patterns"),
@@ -61,6 +65,8 @@ const elements = {
   midiLearn: document.getElementById("midi-learn"),
   generateFromChords: document.getElementById("generate-from-chords"),
   clearChords: document.getElementById("clear-chords"),
+  midiOutput: document.getElementById("midi-output"),
+  refreshMidiOutputs: document.getElementById("refresh-midi-outputs"),
   chordsContainer: document.querySelector(".captured-chords"),
   status: document.getElementById("status"),
   themeToggle: document.getElementById("theme-toggle")
@@ -75,6 +81,165 @@ if (elements.tempoValue) {
 
 function setStatus(message) {
   elements.status.textContent = message;
+}
+
+async function ensureMidiAccess() {
+  if (!navigator.requestMIDIAccess) {
+    setStatus("Web MIDI no disponible en este navegador.");
+    return null;
+  }
+  if (!state.midiAccess) {
+    try {
+      state.midiAccess = await navigator.requestMIDIAccess({ sysex: false });
+      state.midiAccess.onstatechange = () => {
+        refreshMidiOutputs();
+        updateMidiInputListeners();
+      };
+    } catch (error) {
+      setStatus("No fue posible acceder a MIDI.");
+      state.midiAccess = null;
+      return null;
+    }
+  }
+  return state.midiAccess;
+}
+
+function updateMidiInputListeners() {
+  if (!state.midiAccess) return;
+  state.midiAccess.inputs.forEach((input) => {
+    input.onmidimessage = state.midiArmed ? handleMidiMessage : null;
+  });
+}
+
+async function refreshMidiOutputs(showStatus = false) {
+  if (!elements.midiOutput) return;
+  if (!navigator.requestMIDIAccess) {
+    if (showStatus) {
+      setStatus("Web MIDI no disponible en este navegador.");
+    }
+    return;
+  }
+
+  const access = state.midiAccess || (await ensureMidiAccess());
+  if (!access) {
+    if (showStatus) {
+      setStatus("No fue posible acceder a MIDI.");
+    }
+    return;
+  }
+
+  const previousSelection = state.selectedMidiOutputId;
+  elements.midiOutput.innerHTML = "";
+
+  const defaultOption = document.createElement("option");
+  defaultOption.value = "";
+  defaultOption.textContent = "Reproducción interna (WebAudio)";
+  elements.midiOutput.appendChild(defaultOption);
+
+  const outputs = Array.from(access.outputs.values());
+  outputs.forEach((output) => {
+    const option = document.createElement("option");
+    option.value = output.id;
+    const manufacturer = output.manufacturer ? ` - ${output.manufacturer}` : "";
+    option.textContent = `${output.name}${manufacturer}`;
+    if (output.id === previousSelection) {
+      option.selected = true;
+    }
+    elements.midiOutput.appendChild(option);
+  });
+
+  if (previousSelection && !access.outputs.has(previousSelection)) {
+    state.selectedMidiOutputId = "";
+    elements.midiOutput.value = "";
+    if (showStatus) {
+      setStatus("El puerto MIDI seleccionado ya no está disponible.");
+    }
+  } else if (previousSelection) {
+    elements.midiOutput.value = previousSelection;
+  } else {
+    elements.midiOutput.value = "";
+  }
+
+  if (showStatus) {
+    setStatus(
+      outputs.length
+        ? "Puertos MIDI actualizados."
+        : "No hay puertos MIDI de salida disponibles."
+    );
+  }
+}
+
+function handleMidiOutputChange(event) {
+  const selectedId = event.target.value;
+  stopPlayback(false);
+  state.selectedMidiOutputId = selectedId;
+  const output = getSelectedMidiOutput();
+  if (selectedId && output) {
+    setStatus(`Salida MIDI seleccionada: ${output.name}`);
+  } else if (selectedId && !output) {
+    setStatus("El puerto MIDI seleccionado no está disponible.");
+    state.selectedMidiOutputId = "";
+    event.target.value = "";
+  } else {
+    setStatus("Reproducción interna (WebAudio).");
+  }
+}
+
+function getSelectedMidiOutput() {
+  if (!state.midiAccess || !state.selectedMidiOutputId) {
+    return null;
+  }
+  return state.midiAccess.outputs.get(state.selectedMidiOutputId) || null;
+}
+
+function sendAllNotesOff() {
+  if (!state.midiAccess || !state.playingMidiOutputId) {
+    state.activePlaybackNotes.clear();
+    state.playingMidiOutputId = null;
+    return;
+  }
+  const output = state.midiAccess.outputs.get(state.playingMidiOutputId);
+  if (!output) {
+    state.activePlaybackNotes.clear();
+    state.playingMidiOutputId = null;
+    return;
+  }
+  state.activePlaybackNotes.forEach((note) => {
+    output.send([0x80, note, 0]);
+  });
+  output.send([0xb0, 0x7b, 0x00]);
+  state.activePlaybackNotes.clear();
+  state.playingMidiOutputId = null;
+}
+
+function scheduleMidiPlayback(midiOutput, midiLine, bpm) {
+  const msPerTick = ((60 / bpm) / TICKS_PER_QUARTER) * 1000;
+  state.activePlaybackNotes.clear();
+  state.playingMidiOutputId = midiOutput.id;
+
+  midiLine.events.forEach((event) => {
+    const startDelay = Math.max(0, Math.round(event.startTicks * msPerTick));
+    const durationDelay = Math.max(0, Math.round(event.durationTicks * msPerTick));
+
+    const noteOnTimeout = setTimeout(() => {
+      midiOutput.send([0x90, event.note, 100]);
+      state.activePlaybackNotes.add(event.note);
+    }, startDelay);
+
+    const noteOffTimeout = setTimeout(() => {
+      midiOutput.send([0x80, event.note, 0]);
+      state.activePlaybackNotes.delete(event.note);
+    }, startDelay + durationDelay);
+
+    state.scheduledTimeouts.push(noteOnTimeout, noteOffTimeout);
+  });
+
+  const cleanupDelay = Math.max(0, Math.round(midiLine.totalTicks * msPerTick) + 20);
+  const cleanupTimeout = setTimeout(() => {
+    state.activePlaybackNotes.clear();
+    state.playingMidiOutputId = null;
+  }, cleanupDelay);
+  state.scheduledTimeouts.push(cleanupTimeout);
 }
 
 function updateMidiLearnButton() {
@@ -404,28 +569,53 @@ function exportMidi() {
   setStatus("Archivo MIDI exportado.");
 }
 
+function createCatalogButton(pattern) {
+  const item = document.createElement("button");
+  item.className = "catalog-item";
+  item.type = "button";
+  item.setAttribute("role", "listitem");
+  item.setAttribute("draggable", "true");
+  item.textContent = pattern.id;
+  item.title = `Usar ${pattern.id} como semilla`;
+  if (state.seedPattern === pattern.id) {
+    item.classList.add("active");
+  }
+  item.addEventListener("click", () => {
+    state.seedPattern = pattern.id;
+    setStatus(`Semilla seleccionada: ${pattern.id}`);
+    renderCatalog();
+  });
+  item.addEventListener("dragstart", (event) => handleCatalogDragStart(event, pattern.id));
+  item.addEventListener("dragend", handleCatalogDragEnd);
+  return item;
+}
+
+function renderCatalogSection(title, patterns, gridExtraClass = "") {
+  const section = document.createElement("div");
+  section.className = "catalog-section";
+  section.setAttribute("role", "group");
+  section.setAttribute("aria-label", title);
+
+  const subtitle = document.createElement("div");
+  subtitle.className = "catalog-subtitle";
+  subtitle.textContent = title;
+  section.appendChild(subtitle);
+
+  const grid = document.createElement("div");
+  grid.className = gridExtraClass ? `catalog-grid ${gridExtraClass}` : "catalog-grid";
+  grid.setAttribute("role", "list");
+  patterns.forEach((pattern) => {
+    grid.appendChild(createCatalogButton(pattern));
+  });
+  section.appendChild(grid);
+
+  elements.catalog.appendChild(section);
+}
+
 function renderCatalog() {
   elements.catalog.innerHTML = "";
-  FOUR_NOTE_PATTERNS.forEach((pattern) => {
-    const item = document.createElement("button");
-    item.className = "catalog-item";
-    item.type = "button";
-    item.setAttribute("role", "listitem");
-    item.setAttribute("draggable", "true");
-    item.textContent = pattern.id;
-    item.title = `Usar ${pattern.id} como semilla`;
-    if (state.seedPattern === pattern.id) {
-      item.classList.add("active");
-    }
-    item.addEventListener("click", () => {
-      state.seedPattern = pattern.id;
-      setStatus(`Semilla seleccionada: ${pattern.id}`);
-      renderCatalog();
-    });
-    item.addEventListener("dragstart", (event) => handleCatalogDragStart(event, pattern.id));
-    item.addEventListener("dragend", handleCatalogDragEnd);
-    elements.catalog.appendChild(item);
-  });
+  renderCatalogSection("Patrones de 4 notas", FOUR_NOTE_PATTERNS, "catalog-grid--four");
+  renderCatalogSection("Patrones de 3 alturas", THREE_NOTE_PATTERNS, "catalog-grid--three");
 }
 
 function renderChords() {
@@ -477,7 +667,7 @@ function midiToFrequency(note) {
   return 440 * Math.pow(2, (note - 69) / 12);
 }
 
-function stopPlayback() {
+function stopPlayback(userInitiated = true) {
   state.scheduledNodes.forEach((node) => {
     try {
       node.stop();
@@ -486,6 +676,12 @@ function stopPlayback() {
     }
   });
   state.scheduledNodes = [];
+  state.scheduledTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
+  state.scheduledTimeouts = [];
+  sendAllNotesOff();
+  if (userInitiated) {
+    setStatus("Reproducción detenida.");
+  }
 }
 
 function playLine() {
@@ -494,11 +690,18 @@ function playLine() {
     setStatus("No hay línea para reproducir.");
     return;
   }
+  const bpm = Number(elements.tempo.value) || DEFAULT_BPM;
+  stopPlayback(false);
+  const midiOutput = getSelectedMidiOutput();
+  if (midiOutput) {
+    scheduleMidiPlayback(midiOutput, midiLine, bpm);
+    setStatus(`Reproduciendo vía MIDI en ${midiOutput.name}.`);
+    return;
+  }
+
   const audioCtx = ensureAudioContext();
   const now = audioCtx.currentTime;
-  const bpm = Number(elements.tempo.value) || DEFAULT_BPM;
   const secondsPerTick = (60 / bpm) / TICKS_PER_QUARTER;
-  stopPlayback();
   midiLine.events.forEach((event) => {
     const start = now + event.startTicks * secondsPerTick;
     const duration = event.durationTicks * secondsPerTick;
@@ -572,23 +775,14 @@ function onNoteOff(note) {
 }
 
 async function toggleMidiLearn() {
-  if (!navigator.requestMIDIAccess) {
-    setStatus("Web MIDI no disponible en este navegador.");
-    return;
-  }
-
   if (elements.midiLearn) {
     elements.midiLearn.disabled = true;
   }
 
   try {
-    if (!state.midiAccess) {
-      try {
-        state.midiAccess = await navigator.requestMIDIAccess({ sysex: false });
-      } catch (error) {
-        setStatus("No fue posible acceder a MIDI.");
-        return;
-      }
+    const access = await ensureMidiAccess();
+    if (!access) {
+      return;
     }
 
     state.midiArmed = !state.midiArmed;
@@ -596,16 +790,12 @@ async function toggleMidiLearn() {
     state.awaitingRelease = false;
     state.activeNotes.clear();
 
-    if (state.midiAccess) {
-      state.midiAccess.inputs.forEach((input) => {
-        input.onmidimessage = state.midiArmed ? handleMidiMessage : null;
-      });
-    }
-
+    updateMidiInputListeners();
     updateMidiLearnButton();
+    refreshMidiOutputs();
 
     if (state.midiArmed) {
-      const hasInputs = state.midiAccess && state.midiAccess.inputs.size > 0;
+      const hasInputs = access.inputs.size > 0;
       setStatus(
         hasInputs
           ? "MIDI Learn encendido. Captura acordes de 4 notas o de 3 alturas."
@@ -819,13 +1009,19 @@ function attachEvents() {
   elements.generate.addEventListener("click", handleGenerate);
   elements.clear.addEventListener("click", clearPatterns);
   elements.play.addEventListener("click", playLine);
-  elements.stop.addEventListener("click", stopPlayback);
+  elements.stop.addEventListener("click", () => stopPlayback(true));
   if (elements.exportMidi) {
     elements.exportMidi.addEventListener("click", exportMidi);
   }
   elements.midiLearn.addEventListener("click", toggleMidiLearn);
   elements.generateFromChords.addEventListener("click", generateFromChords);
   elements.clearChords.addEventListener("click", clearChords);
+  if (elements.midiOutput) {
+    elements.midiOutput.addEventListener("change", handleMidiOutputChange);
+  }
+  if (elements.refreshMidiOutputs) {
+    elements.refreshMidiOutputs.addEventListener("click", () => refreshMidiOutputs(true));
+  }
 }
 
 renderCatalog();
@@ -833,3 +1029,4 @@ renderMatrix();
 renderChords();
 updateMidiLearnButton();
 attachEvents();
+refreshMidiOutputs();

@@ -114,6 +114,14 @@ input[type="number"] {
   color: inherit;
 }
 
+select {
+  padding: 0.45rem 0.6rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.7);
+  color: inherit;
+}
+
 input[type="range"] {
   accent-color: var(--accent);
 }
@@ -185,10 +193,44 @@ button.toggle.active .indicator {
   opacity: 1;
 }
 
+.control-group.midi-output {
+  align-items: stretch;
+}
+
+.control-group.midi-output select {
+  min-width: 220px;
+}
+
+.control-group.midi-output button {
+  white-space: nowrap;
+}
+
+.catalog-collections {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.catalog-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.catalog-subtitle {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
 .catalog-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.5rem;
+}
+
+.catalog-grid--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .catalog-item {
