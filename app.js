@@ -282,11 +282,12 @@ function findPatternById(id) {
 
 function getChordVoiceCount(chord) {
   const source = chord && chord.length ? chord : DEFAULT_CHORD;
-  const unique = new Set(source);
-  if (unique.size) {
-    return unique.size;
+  const limited = source.slice(0, 4);
+  const count = limited.length;
+  if (count) {
+    return count;
   }
-  return Math.min(source.length || 0, 4) || 1;
+  return 1;
 }
 
 function getPatternPoolForChord(chord) {
