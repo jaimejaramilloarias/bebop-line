@@ -446,6 +446,15 @@ function handleMatrixDrop(event) {
   if (!pattern) return;
   const index = Number(event.currentTarget.dataset.index);
   if (Number.isNaN(index)) return;
+  const chord = state.chords[index] || DEFAULT_CHORD;
+  if (!patternFitsChord(pattern, chord)) {
+    const voiceCount = getChordVoiceCount(chord);
+    const expected = voiceCount >= 4 ? "4" : String(voiceCount);
+    setStatus(
+      `Este compás requiere un patrón de ${expected} alturas. No se aplicó ${pattern.id}.`
+    );
+    return;
+  }
   state.patternGroups[index] = pattern;
   rebuildLineNotes();
   renderMatrix();
