@@ -46,8 +46,16 @@
       <section class="midi-panel" aria-labelledby="midi-title">
         <div class="section-title" id="midi-title">Panel MIDI</div>
         <div class="control-group midi-actions">
-          <button id="connect-midi" class="primary" title="Solicitar acceso a dispositivos MIDI">Conectar</button>
-          <button id="arm-midi" title="Armar/Desarmar captura MIDI" aria-pressed="false">Armar captura</button>
+          <button
+            id="midi-learn"
+            class="toggle"
+            title="Activar o desactivar la captura MIDI continua"
+            aria-pressed="false"
+          >
+            <span class="label">MIDI Learn</span>
+            <span class="state" aria-live="polite">(apagado)</span>
+            <span class="indicator" aria-hidden="true"></span>
+          </button>
           <button id="generate-from-chords" title="Generar línea a partir de acordes capturados">Generar desde acordes</button>
         </div>
         <div class="control-group playback">
@@ -72,6 +80,7 @@
 
     <div id="status" class="sr-only" aria-live="assertive"></div>
 
+    <script src="https://cdn.jsdelivr.net/npm/vexflow@4.1.0/build/vexflow-min.js" integrity="sha384-22JQ2BufVnl3r1yxEiRfVd/l4Q09prjMnhXNLM88dGHOHlWNQi2RZeUBCS7ovspI" crossorigin="anonymous"></script>
     <script type="module" src="app.js"></script>
   </body>
 </html>
