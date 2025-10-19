@@ -615,23 +615,122 @@ function patternsHaveValidBoundaries(groups, chords) {
   return true;
 }
 
+function isChordWithDuplicatedNote(chord) {
+  const uniqueNotes = new Set(chord);
+  return uniqueNotes.size === 3;
+}
+
+function patternHasConsecutiveDuplicateNotes(pattern, chord) {
+  const sortedChord = getSortedChord(chord);
+  const notes = pattern.values.map((voice) => getNoteFromSortedChordVoice(voice, sortedChord));
+  for (let i = 1; i < notes.length; i++) {
+    if (notes[i] === notes[i - 1]) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function sequenceAvoidsConsecutiveDuplicateNotes(sequence, chords) {
+  for (let i = 0; i < sequence.length; i++) {
+    const chord = chords[i] || DEFAULT_CHORD;
+    if (!isChordWithDuplicatedNote(chord)) continue;
+    if (patternHasConsecutiveDuplicateNotes(sequence[i], chord)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function buildSequenceWithConstraints(chords, seed, enforceSeed) {
+  const count = chords.length;
+  const sequence = new Array(count);
+  const seedPattern = seed ? PATTERNS.find((p) => p.id === seed) : null;
+
+  function isPatternValidAtIndex(pattern, index) {
+    const chord = chords[index] || DEFAULT_CHORD;
+    if (isChordWithDuplicatedNote(chord) && patternHasConsecutiveDuplicateNotes(pattern, chord)) {
+      return false;
+    }
+    if (index === 0) return true;
+    const prevPattern = sequence[index - 1];
+    const prevChord = chords[index - 1] || DEFAULT_CHORD;
+    const lastNote = getNoteFromChordVoice(prevPattern.values[3], prevChord);
+    const firstNoteNext = getNoteFromChordVoice(pattern.values[0], chord);
+    if (lastNote === firstNoteNext || !isIntervalWithinMajorSeventh(lastNote, firstNoteNext)) {
+      return false;
+    }
+    return true;
+  }
+
+  function dfs(index) {
+    if (index === count) {
+      return true;
+    }
+
+    let candidates = PATTERNS;
+    if (index === 0 && seedPattern) {
+      if (enforceSeed) {
+        candidates = [seedPattern];
+      } else if (!sequence[0]) {
+        candidates = [seedPattern, ...PATTERNS.filter((p) => p !== seedPattern)];
+      }
+    }
+
+    for (const pattern of candidates) {
+      if (!isPatternValidAtIndex(pattern, index)) continue;
+      sequence[index] = pattern;
+      if (dfs(index + 1)) {
+        return true;
+      }
+    }
+    sequence[index] = null;
+    return false;
+  }
+
+  return dfs(0) ? sequence.slice() : null;
+}
+
 function generateValidSequenceForChords(chords, seed) {
   const count = chords.length;
   if (!count) return [];
   const maxAttempts = 500;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const sequence = generateSequence(count, seed);
-    if (patternsHaveValidBoundaries(sequence, chords)) {
+    if (
+      patternsHaveValidBoundaries(sequence, chords) &&
+      sequenceAvoidsConsecutiveDuplicateNotes(sequence, chords)
+    ) {
       return sequence;
     }
   }
-  return generateSequence(count, seed);
+  const enforcedSeed = buildSequenceWithConstraints(chords, seed, true);
+  if (enforcedSeed) {
+    return enforcedSeed;
+  }
+  const flexibleSeed = buildSequenceWithConstraints(chords, seed, false);
+  if (flexibleSeed) {
+    return flexibleSeed;
+  }
+  const fallback = generateSequence(count, seed);
+  if (
+    patternsHaveValidBoundaries(fallback, chords) &&
+    sequenceAvoidsConsecutiveDuplicateNotes(fallback, chords)
+  ) {
+    return fallback;
+  }
+  return [];
 }
 
 function ensureValidPatternsAfterCapture() {
   if (!state.patternGroups.length) return false;
   if (state.patternGroups.length !== state.chords.length) return false;
-  if (patternsHaveValidBoundaries(state.patternGroups, state.chords)) return false;
+  if (
+    patternsHaveValidBoundaries(state.patternGroups, state.chords) &&
+    sequenceAvoidsConsecutiveDuplicateNotes(state.patternGroups, state.chords)
+  ) {
+    return false;
+  }
   const sequence = generateValidSequenceForChords(state.chords, state.seedPattern);
   if (!sequence.length) return false;
   updatePatternGroups(sequence);
