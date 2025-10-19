@@ -254,10 +254,12 @@ button.toggle.active .indicator {
 .matrix-pattern-id {
   position: absolute;
   top: 0.45rem;
-  right: 0.6rem;
+  left: 50%;
+  transform: translateX(-50%);
   font-family: "Roboto Mono", monospace;
   font-size: 0.75rem;
   opacity: 0.7;
+  text-align: center;
 }
 
 .matrix-group::after {
@@ -311,13 +313,6 @@ button.toggle.active .indicator {
   background: var(--accent-soft);
   color: var(--accent);
   border: 1px solid var(--accent);
-}
-
-footer {
-  text-align: center;
-  padding: 1.5rem;
-  opacity: 0.8;
-  font-size: 0.9rem;
 }
 
 .sr-only {
