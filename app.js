@@ -38,8 +38,7 @@ const elements = {
   tempoValue: document.getElementById("tempo-value"),
   play: document.getElementById("play-line"),
   stop: document.getElementById("stop-line"),
-  connectMidi: document.getElementById("connect-midi"),
-  armMidi: document.getElementById("arm-midi"),
+  midiLearn: document.getElementById("midi-learn"),
   generateFromChords: document.getElementById("generate-from-chords"),
   clearChords: document.getElementById("clear-chords"),
   chordsContainer: document.querySelector(".captured-chords"),
@@ -49,6 +48,17 @@ const elements = {
 
 function setStatus(message) {
   elements.status.textContent = message;
+}
+
+function updateMidiLearnButton() {
+  if (!elements.midiLearn) return;
+  elements.midiLearn.classList.toggle("active", state.midiArmed);
+  elements.midiLearn.classList.toggle("primary", state.midiArmed);
+  elements.midiLearn.setAttribute("aria-pressed", String(state.midiArmed));
+  const stateLabel = elements.midiLearn.querySelector(".state");
+  if (stateLabel) {
+    stateLabel.textContent = state.midiArmed ? "(encendido)" : "(apagado)";
+  }
 }
 
 function restoreTheme() {
@@ -149,7 +159,6 @@ function renderMatrix() {
 }
 
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-const LETTERS = ["C", "D", "E", "F", "G", "A", "B"];
 
 function noteNumberToName(note) {
   const name = NOTE_NAMES[note % 12];
@@ -157,20 +166,25 @@ function noteNumberToName(note) {
   return `${name}${octave}`;
 }
 
-function noteToStaffOffset(note) {
+function midiNoteToVexKey(note) {
+  const name = NOTE_NAMES[note % 12];
   const octave = Math.floor(note / 12) - 1;
-  const letter = NOTE_NAMES[note % 12][0];
-  const letterIndex = LETTERS.indexOf(letter);
-  const totalSteps = octave * 7 + letterIndex;
-  const referenceOctave = 4;
-  const referenceLetterIndex = LETTERS.indexOf("E");
-  const referenceSteps = referenceOctave * 7 + referenceLetterIndex;
-  return totalSteps - referenceSteps;
+  const letter = name[0].toLowerCase();
+  const accidental = name.length > 1 ? name.slice(1) : "";
+  return { key: `${letter}/${octave}`, accidental };
+}
+
+function createVexFlowNote(VF, note) {
+  const { key, accidental } = midiNoteToVexKey(note);
+  const staveNote = new VF.StaveNote({ keys: [key], duration: "8", stem_direction: 1 });
+  if (accidental) {
+    staveNote.addAccidental(0, new VF.Accidental(accidental));
+  }
+  return staveNote;
 }
 
 function renderStaff() {
   elements.staff.innerHTML = "";
-  const svgNS = "http://www.w3.org/2000/svg";
   const totalNotes = state.lineNotes.length;
   if (!totalNotes) {
     const empty = document.createElement("p");
@@ -178,91 +192,73 @@ function renderStaff() {
     elements.staff.appendChild(empty);
     return;
   }
+
+  const VF = window.Vex && window.Vex.Flow;
+  if (!VF) {
+    const warning = document.createElement("p");
+    warning.textContent = "No fue posible cargar la notación. Revisa tu conexión a internet.";
+    elements.staff.appendChild(warning);
+    return;
+  }
+
   const notesPerMeasure = 8;
   const measures = Math.ceil(totalNotes / notesPerMeasure);
-  const noteSpacing = 28;
-  const measureGap = 24;
-  const leftMargin = 30;
-  const staffHeight = 140;
-  const width = leftMargin + measures * notesPerMeasure * noteSpacing + (measures - 1) * measureGap + 20;
-  const svg = document.createElementNS(svgNS, "svg");
-  svg.setAttribute("viewBox", `0 0 ${width} ${staffHeight}`);
-  svg.setAttribute("role", "img");
+  const measuresPerRow = Math.min(3, measures);
+  const staveWidth = 260;
+  const measureGap = 28;
+  const xPadding = 24;
+  const yPadding = 24;
+  const rowHeight = 150;
+  const rows = Math.ceil(measures / measuresPerRow);
+  const width = Math.max(360, xPadding * 2 + measuresPerRow * staveWidth + (measuresPerRow - 1) * measureGap);
+  const height = yPadding * 2 + rows * rowHeight;
 
-  const stepHeight = 6;
-  const bottomLineY = 92; // E4
+  const wrapper = document.createElement("div");
+  wrapper.className = "vexflow-wrapper";
+  elements.staff.appendChild(wrapper);
 
-  // Staff lines
-  for (let i = 0; i < 5; i++) {
-    const y = bottomLineY - i * stepHeight * 2;
-    const line = document.createElementNS(svgNS, "line");
-    line.setAttribute("x1", "10");
-    line.setAttribute("x2", `${width - 10}`);
-    line.setAttribute("y1", `${y}`);
-    line.setAttribute("y2", `${y}`);
-    line.setAttribute("stroke", "currentColor");
-    line.setAttribute("stroke-width", "1");
-    svg.appendChild(line);
+  const renderer = new VF.Renderer(wrapper, VF.Renderer.Backends.SVG);
+  renderer.resize(width, height);
+  const context = renderer.getContext();
+  const themeColor = getComputedStyle(document.body).color;
+  if (typeof context.setFillStyle === "function") {
+    context.setFillStyle(themeColor);
+    context.setStrokeStyle(themeColor);
   }
 
-  // Notes
-  state.lineNotes.forEach((note, index) => {
-    const measureIndex = Math.floor(index / notesPerMeasure);
-    const positionInMeasure = index % notesPerMeasure;
-    const x =
-      leftMargin +
-      measureIndex * (notesPerMeasure * noteSpacing + measureGap) +
-      positionInMeasure * noteSpacing;
-    const offset = noteToStaffOffset(note);
-    const y = bottomLineY - offset * stepHeight;
-
-    const noteHead = document.createElementNS(svgNS, "ellipse");
-    noteHead.setAttribute("cx", String(x));
-    noteHead.setAttribute("cy", String(y));
-    noteHead.setAttribute("rx", "6.5");
-    noteHead.setAttribute("ry", "4.5");
-    noteHead.setAttribute("fill", "currentColor");
-    svg.appendChild(noteHead);
-
-    const stem = document.createElementNS(svgNS, "line");
-    const stemX = x + 6;
-    stem.setAttribute("x1", String(stemX));
-    stem.setAttribute("x2", String(stemX));
-    stem.setAttribute("y1", String(y));
-    stem.setAttribute("y2", String(y - 28));
-    stem.setAttribute("stroke", "currentColor");
-    stem.setAttribute("stroke-width", "1.3");
-    svg.appendChild(stem);
-
-    // Ledger lines when needed
-    const staffTop = bottomLineY - stepHeight * 8;
-    const staffBottom = bottomLineY + stepHeight * 2;
-    if (y < staffTop || y > staffBottom) {
-      const ledger = document.createElementNS(svgNS, "line");
-      ledger.setAttribute("x1", String(x - 10));
-      ledger.setAttribute("x2", String(x + 10));
-      ledger.setAttribute("y1", String(y));
-      ledger.setAttribute("y2", String(y));
-      ledger.setAttribute("stroke", "currentColor");
-      ledger.setAttribute("stroke-width", "1");
-      svg.appendChild(ledger);
+  for (let measureIndex = 0; measureIndex < measures; measureIndex++) {
+    const row = Math.floor(measureIndex / measuresPerRow);
+    const column = measureIndex % measuresPerRow;
+    const x = xPadding + column * (staveWidth + measureGap);
+    const y = yPadding + row * rowHeight;
+    const stave = new VF.Stave(x, y, staveWidth);
+    if (measureIndex === 0) {
+      stave.addClef("treble").addTimeSignature("4/4");
     }
-  });
+    stave.setContext(context).draw();
 
-  // Measure separators
-  for (let i = 1; i < measures; i++) {
-    const x = leftMargin - noteSpacing / 2 + i * (notesPerMeasure * noteSpacing + measureGap);
-    const line = document.createElementNS(svgNS, "line");
-    line.setAttribute("x1", `${x}`);
-    line.setAttribute("x2", `${x}`);
-    line.setAttribute("y1", `${bottomLineY - stepHeight * 8}`);
-    line.setAttribute("y2", `${bottomLineY + stepHeight * 2}`);
-    line.setAttribute("stroke", "currentColor");
-    line.setAttribute("stroke-width", "1.5");
-    svg.appendChild(line);
+    const sliceStart = measureIndex * notesPerMeasure;
+    const sliceEnd = sliceStart + notesPerMeasure;
+    const measureNotes = state.lineNotes.slice(sliceStart, sliceEnd);
+    const vexNotes = measureNotes.map((note) => createVexFlowNote(VF, note));
+    while (vexNotes.length < notesPerMeasure) {
+      vexNotes.push(new VF.StaveNote({ keys: ["b/4"], duration: "8r" }));
+    }
+
+    const voice = new VF.Voice({ num_beats: 4, beat_value: 4 }).setMode(VF.Voice.Mode.SOFT);
+    voice.addTickables(vexNotes);
+    new VF.Formatter().joinVoices([voice]).format([voice], staveWidth - 18);
+    voice.draw(context, stave);
+
+    const beams = VF.Beam.generateBeams(vexNotes.filter((note) => note.getDuration() === "8"));
+    beams.forEach((beam) => beam.setContext(context).draw());
   }
 
-  elements.staff.appendChild(svg);
+  const svgElement = wrapper.querySelector("svg");
+  if (svgElement) {
+    svgElement.setAttribute("role", "img");
+    svgElement.setAttribute("aria-label", "Partitura generada");
+  }
 }
 
 function renderCatalog() {
@@ -374,19 +370,6 @@ function playLine() {
   setStatus("Reproduciendo línea.");
 }
 
-function requestMidi() {
-  if (!navigator.requestMIDIAccess) {
-    setStatus("Web MIDI no disponible en este navegador.");
-    return;
-  }
-  navigator.requestMIDIAccess({ sysex: false })
-    .then((access) => {
-      state.midiAccess = access;
-      setStatus("Dispositivos MIDI listos.");
-    })
-    .catch(() => setStatus("No fue posible acceder a MIDI."));
-}
-
 function handleMidiMessage(event) {
   const [statusByte, note, velocity] = event.data;
   const command = statusByte & 0xf0;
@@ -429,25 +412,54 @@ function onNoteOff(note) {
   }
 }
 
-function toggleMidiArm() {
-  if (!state.midiAccess) {
-    setStatus("Conecta un dispositivo MIDI primero.");
+async function toggleMidiLearn() {
+  if (!navigator.requestMIDIAccess) {
+    setStatus("Web MIDI no disponible en este navegador.");
     return;
   }
-  state.midiArmed = !state.midiArmed;
-  elements.armMidi.textContent = state.midiArmed ? "Desarmar captura" : "Armar captura";
-  elements.armMidi.setAttribute("aria-pressed", String(state.midiArmed));
-  state.captureQueue = [];
-  state.awaitingRelease = false;
-  state.activeNotes.clear();
-  state.midiAccess.inputs.forEach((input) => {
-    if (state.midiArmed) {
-      input.onmidimessage = handleMidiMessage;
-    } else {
-      input.onmidimessage = null;
+
+  if (elements.midiLearn) {
+    elements.midiLearn.disabled = true;
+  }
+
+  try {
+    if (!state.midiAccess) {
+      try {
+        state.midiAccess = await navigator.requestMIDIAccess({ sysex: false });
+      } catch (error) {
+        setStatus("No fue posible acceder a MIDI.");
+        return;
+      }
     }
-  });
-  setStatus(state.midiArmed ? "Captura MIDI armada." : "Captura MIDI desactivada.");
+
+    state.midiArmed = !state.midiArmed;
+    state.captureQueue = [];
+    state.awaitingRelease = false;
+    state.activeNotes.clear();
+
+    if (state.midiAccess) {
+      state.midiAccess.inputs.forEach((input) => {
+        input.onmidimessage = state.midiArmed ? handleMidiMessage : null;
+      });
+    }
+
+    updateMidiLearnButton();
+
+    if (state.midiArmed) {
+      const hasInputs = state.midiAccess && state.midiAccess.inputs.size > 0;
+      setStatus(
+        hasInputs
+          ? "MIDI Learn encendido. Captura acordes de 4 notas para generar líneas."
+          : "MIDI Learn encendido. No se detectan entradas MIDI."
+      );
+    } else {
+      setStatus("MIDI Learn apagado.");
+    }
+  } finally {
+    if (elements.midiLearn) {
+      elements.midiLearn.disabled = false;
+    }
+  }
 }
 
 function generateFromChords() {
@@ -465,8 +477,7 @@ function attachEvents() {
   elements.clear.addEventListener("click", clearPatterns);
   elements.play.addEventListener("click", playLine);
   elements.stop.addEventListener("click", stopPlayback);
-  elements.connectMidi.addEventListener("click", requestMidi);
-  elements.armMidi.addEventListener("click", toggleMidiArm);
+  elements.midiLearn.addEventListener("click", toggleMidiLearn);
   elements.generateFromChords.addEventListener("click", generateFromChords);
   elements.clearChords.addEventListener("click", clearChords);
 }
@@ -475,4 +486,5 @@ renderCatalog();
 renderMatrix();
 renderStaff();
 renderChords();
+updateMidiLearnButton();
 attachEvents();
