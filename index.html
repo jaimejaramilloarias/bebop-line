@@ -38,9 +38,12 @@
       </section>
 
       <section class="visualizations" aria-labelledby="visualizations-title">
-        <div class="section-title" id="visualizations-title">Visualizaciones</div>
-        <div class="matrix" aria-label="Matriz de alturas" role="img"></div>
-        <div class="staff" aria-label="Partitura 4/4" role="img"></div>
+        <div class="section-title" id="visualizations-title">Distribución de alturas</div>
+        <div
+          class="matrix"
+          aria-label="Matriz de alturas. Arrastra patrones para reordenar cada compás"
+          role="img"
+        ></div>
       </section>
 
       <section class="midi-panel" aria-labelledby="midi-title">
@@ -60,10 +63,11 @@
         </div>
         <div class="control-group playback">
           <label for="tempo" class="tempo-label" title="Ajustar tempo en BPM">Tempo</label>
-          <input id="tempo" type="range" min="40" max="220" value="120" />
+          <input id="tempo" type="range" min="40" max="320" value="120" />
           <span id="tempo-value" aria-live="polite">120 BPM</span>
           <button id="play-line" class="primary" title="Reproducir línea generada">Reproducir</button>
           <button id="stop-line" title="Detener reproducción">Detener</button>
+          <button id="export-midi" title="Exportar la línea como archivo MIDI">Exportar MIDI</button>
           <button id="clear-chords" title="Eliminar acordes capturados">Borrar acordes</button>
         </div>
         <div class="captured-chords" aria-live="polite" aria-label="Acordes capturados"></div>
@@ -80,11 +84,6 @@
 
     <div id="status" class="sr-only" aria-live="assertive"></div>
 
-    <script
-      src="https://cdn.jsdelivr.net/npm/vexflow@4.1.0/releases/vexflow-min.js"
-      integrity="sha384-sR08D+4r1mfM5tiwT5NTwBKBbkb7/9BL6/OzJ4vAIR+Gr2sp5xN0y0UYYjZDZllk"
-      crossorigin="anonymous"
-    ></script>
     <script type="module" src="app.js"></script>
   </body>
 </html>

@@ -36,7 +36,6 @@ const state = {
 const elements = {
   catalog: document.querySelector(".catalog-grid"),
   matrix: document.querySelector(".matrix"),
-  staff: document.querySelector(".staff"),
   generate: document.getElementById("generate-patterns"),
   clear: document.getElementById("clear-patterns"),
   groupCount: document.getElementById("group-count"),
@@ -44,6 +43,7 @@ const elements = {
   tempoValue: document.getElementById("tempo-value"),
   play: document.getElementById("play-line"),
   stop: document.getElementById("stop-line"),
+  exportMidi: document.getElementById("export-midi"),
   midiLearn: document.getElementById("midi-learn"),
   generateFromChords: document.getElementById("generate-from-chords"),
   clearChords: document.getElementById("clear-chords"),
@@ -113,7 +113,6 @@ function updatePatternGroups(groups) {
   state.patternGroups = groups;
   rebuildLineNotes();
   renderMatrix();
-  renderStaff();
 }
 
 function rebuildLineNotes() {
@@ -147,20 +146,27 @@ function renderMatrix() {
   elements.matrix.innerHTML = "";
   if (state.patternGroups.length === 0) {
     const empty = document.createElement("p");
-    empty.textContent = "Genera patrones o captura acordes para ver la matriz.";
+    empty.textContent =
+      "Genera patrones o captura acordes para ver la matriz y arrastra una muestra sobre un compás para ajustar su orden.";
     elements.matrix.appendChild(empty);
     return;
   }
-  const rows = [];
   for (let i = 0; i < state.patternGroups.length; i += 4) {
-    rows.push(state.patternGroups.slice(i, i + 4));
-  }
-  rows.forEach((row) => {
     const rowEl = document.createElement("div");
     rowEl.className = "matrix-row";
-    row.forEach((pattern) => {
+    const rowEnd = Math.min(i + 4, state.patternGroups.length);
+    for (let j = i; j < rowEnd; j++) {
+      const pattern = state.patternGroups[j];
       const groupEl = document.createElement("div");
       groupEl.className = "matrix-group";
+      groupEl.dataset.index = String(j);
+      groupEl.setAttribute("role", "group");
+      groupEl.setAttribute("aria-label", `Compás ${j + 1} con patrón ${pattern.id}`);
+      groupEl.addEventListener("dragenter", handleMatrixDragEnter);
+      groupEl.addEventListener("dragover", handleMatrixDragOver);
+      groupEl.addEventListener("dragleave", handleMatrixDragLeave);
+      groupEl.addEventListener("drop", handleMatrixDrop);
+
       pattern.values.forEach((voice) => {
         const cell = document.createElement("div");
         cell.className = "matrix-cell";
@@ -170,10 +176,16 @@ function renderMatrix() {
         cell.appendChild(circle);
         groupEl.appendChild(cell);
       });
+
+      const label = document.createElement("span");
+      label.className = "matrix-pattern-id";
+      label.textContent = pattern.id;
+      groupEl.appendChild(label);
+
       rowEl.appendChild(groupEl);
-    });
+    }
     elements.matrix.appendChild(rowEl);
-  });
+  }
 }
 
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -184,100 +196,149 @@ function noteNumberToName(note) {
   return `${name}${octave}`;
 }
 
-function midiNoteToVexKey(note) {
-  const name = NOTE_NAMES[note % 12];
-  const octave = Math.floor(note / 12) - 1;
-  const letter = name[0].toLowerCase();
-  const accidental = name.length > 1 ? name.slice(1) : "";
-  return { key: `${letter}/${octave}`, accidental };
+function handleCatalogDragStart(event, patternId) {
+  event.dataTransfer.setData("text/pattern", patternId);
+  event.dataTransfer.effectAllowed = "copy";
+  event.currentTarget.classList.add("dragging");
 }
 
-function createVexFlowNote(VF, note) {
-  const { key, accidental } = midiNoteToVexKey(note);
-  const staveNote = new VF.StaveNote({ keys: [key], duration: "8", stem_direction: 1 });
-  if (accidental) {
-    staveNote.addAccidental(0, new VF.Accidental(accidental));
-  }
-  return staveNote;
+function handleCatalogDragEnd(event) {
+  event.currentTarget.classList.remove("dragging");
 }
 
-function renderStaff() {
-  elements.staff.innerHTML = "";
-  const midiLine = state.midiLine || { events: [], measures: 0 };
-  const totalNotes = midiLine.events.length;
-  if (!totalNotes) {
-    const empty = document.createElement("p");
-    empty.textContent = "La partitura aparecerá al generar una línea.";
-    elements.staff.appendChild(empty);
+function canAcceptPattern(event) {
+  const types = event.dataTransfer?.types;
+  if (!types) return false;
+  return Array.from(types).includes("text/pattern");
+}
+
+function handleMatrixDragEnter(event) {
+  if (!canAcceptPattern(event)) return;
+  event.preventDefault();
+  event.currentTarget.classList.add("drop-ready");
+}
+
+function handleMatrixDragOver(event) {
+  if (!canAcceptPattern(event)) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "copy";
+}
+
+function handleMatrixDragLeave(event) {
+  if (event.relatedTarget && event.currentTarget.contains(event.relatedTarget)) {
     return;
   }
+  event.currentTarget.classList.remove("drop-ready");
+}
 
-  const VF = window.Vex && window.Vex.Flow;
-  if (!VF) {
-    const warning = document.createElement("p");
-    warning.textContent = "No fue posible cargar la notación. Revisa tu conexión a internet.";
-    elements.staff.appendChild(warning);
+function handleMatrixDrop(event) {
+  if (!canAcceptPattern(event)) return;
+  event.preventDefault();
+  event.currentTarget.classList.remove("drop-ready");
+  const patternId = event.dataTransfer.getData("text/pattern");
+  const pattern = PATTERNS.find((p) => p.id === patternId);
+  if (!pattern) return;
+  const index = Number(event.currentTarget.dataset.index);
+  if (Number.isNaN(index)) return;
+  state.patternGroups[index] = pattern;
+  rebuildLineNotes();
+  renderMatrix();
+  setStatus(`Patrón ${pattern.id} aplicado al compás ${index + 1}.`);
+}
+
+function encodeVariableLength(value) {
+  const bytes = [];
+  let buffer = value & 0x7f;
+  while ((value >>= 7)) {
+    buffer <<= 8;
+    buffer |= (value & 0x7f) | 0x80;
+  }
+  while (true) {
+    bytes.push(buffer & 0xff);
+    if (buffer & 0x80) {
+      buffer >>= 8;
+    } else {
+      break;
+    }
+  }
+  return bytes;
+}
+
+function createMidiFile(midiLine, bpm) {
+  const tempoBpm = Math.max(1, Math.round(bpm));
+  const tempo = Math.max(1, Math.round(60000000 / tempoBpm));
+  const events = [
+    { tick: 0, order: -1, bytes: [0xff, 0x51, 0x03, (tempo >> 16) & 0xff, (tempo >> 8) & 0xff, tempo & 0xff] }
+  ];
+
+  midiLine.events.forEach((event) => {
+    events.push({ tick: event.startTicks, order: 0, bytes: [0x90, event.note, 100] });
+    events.push({ tick: event.startTicks + event.durationTicks, order: 1, bytes: [0x80, event.note, 0] });
+  });
+
+  events.sort((a, b) => a.tick - b.tick || a.order - b.order);
+
+  const trackBytes = [];
+  let lastTick = 0;
+  events.forEach((event) => {
+    const delta = Math.max(0, event.tick - lastTick);
+    lastTick = event.tick;
+    trackBytes.push(...encodeVariableLength(delta), ...event.bytes);
+  });
+
+  const endDelta = Math.max(0, midiLine.totalTicks - lastTick);
+  trackBytes.push(...encodeVariableLength(endDelta), 0xff, 0x2f, 0x00);
+
+  const trackLength = trackBytes.length;
+  const header = [
+    0x4d,
+    0x54,
+    0x68,
+    0x64,
+    0x00,
+    0x00,
+    0x00,
+    0x06,
+    0x00,
+    0x00,
+    0x00,
+    0x01,
+    (TICKS_PER_QUARTER >> 8) & 0xff,
+    TICKS_PER_QUARTER & 0xff
+  ];
+  const trackHeader = [
+    0x4d,
+    0x54,
+    0x72,
+    0x6b,
+    (trackLength >> 24) & 0xff,
+    (trackLength >> 16) & 0xff,
+    (trackLength >> 8) & 0xff,
+    trackLength & 0xff
+  ];
+
+  return new Uint8Array([...header, ...trackHeader, ...trackBytes]);
+}
+
+function exportMidi() {
+  const midiLine = state.midiLine;
+  if (!midiLine.events.length) {
+    setStatus("No hay línea para exportar.");
     return;
   }
-
-  const notesPerMeasure = NOTES_PER_MEASURE;
-  const measures = midiLine.measures;
-  const measuresPerRow = Math.min(3, measures);
-  const staveWidth = 260;
-  const measureGap = 28;
-  const xPadding = 24;
-  const yPadding = 24;
-  const rowHeight = 150;
-  const rows = Math.ceil(measures / measuresPerRow);
-  const width = Math.max(360, xPadding * 2 + measuresPerRow * staveWidth + (measuresPerRow - 1) * measureGap);
-  const height = yPadding * 2 + rows * rowHeight;
-
-  const wrapper = document.createElement("div");
-  wrapper.className = "vexflow-wrapper";
-  elements.staff.appendChild(wrapper);
-
-  const renderer = new VF.Renderer(wrapper, VF.Renderer.Backends.SVG);
-  renderer.resize(width, height);
-  const context = renderer.getContext();
-  const themeColor = getComputedStyle(document.body).color;
-  if (typeof context.setFillStyle === "function") {
-    context.setFillStyle(themeColor);
-    context.setStrokeStyle(themeColor);
-  }
-
-  for (let measureIndex = 0; measureIndex < measures; measureIndex++) {
-    const row = Math.floor(measureIndex / measuresPerRow);
-    const column = measureIndex % measuresPerRow;
-    const x = xPadding + column * (staveWidth + measureGap);
-    const y = yPadding + row * rowHeight;
-    const stave = new VF.Stave(x, y, staveWidth);
-    if (measureIndex === 0) {
-      stave.addClef("treble").addTimeSignature("4/4");
-    }
-    stave.setContext(context).draw();
-
-    const sliceStart = measureIndex * notesPerMeasure;
-    const sliceEnd = sliceStart + notesPerMeasure;
-    const measureEvents = midiLine.events.slice(sliceStart, sliceEnd);
-    const vexNotes = measureEvents.map((event) => createVexFlowNote(VF, event.note));
-    while (vexNotes.length < notesPerMeasure) {
-      vexNotes.push(new VF.StaveNote({ keys: ["b/4"], duration: "8r" }));
-    }
-
-    const voice = new VF.Voice({ num_beats: 4, beat_value: 4 }).setMode(VF.Voice.Mode.SOFT);
-    voice.addTickables(vexNotes);
-    new VF.Formatter().joinVoices([voice]).format([voice], staveWidth - 18);
-    voice.draw(context, stave);
-
-    const beams = VF.Beam.generateBeams(vexNotes.filter((note) => note.getDuration() === "8"));
-    beams.forEach((beam) => beam.setContext(context).draw());
-  }
-
-  const svgElement = wrapper.querySelector("svg");
-  if (svgElement) {
-    svgElement.setAttribute("role", "img");
-    svgElement.setAttribute("aria-label", "Partitura generada");
-  }
+  const bpm = Number(elements.tempo.value) || 120;
+  const data = createMidiFile(midiLine, bpm);
+  const blob = new Blob([data], { type: "audio/midi" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const today = new Date().toISOString().slice(0, 10);
+  link.href = url;
+  link.download = `voicing-line-${today}.mid`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  setStatus("Archivo MIDI exportado.");
 }
 
 function renderCatalog() {
@@ -287,6 +348,7 @@ function renderCatalog() {
     item.className = "catalog-item";
     item.type = "button";
     item.setAttribute("role", "listitem");
+    item.setAttribute("draggable", "true");
     item.textContent = pattern.id;
     item.title = `Usar ${pattern.id} como semilla`;
     if (state.seedPattern === pattern.id) {
@@ -297,6 +359,8 @@ function renderCatalog() {
       setStatus(`Semilla seleccionada: ${pattern.id}`);
       renderCatalog();
     });
+    item.addEventListener("dragstart", (event) => handleCatalogDragStart(event, pattern.id));
+    item.addEventListener("dragend", handleCatalogDragEnd);
     elements.catalog.appendChild(item);
   });
 }
@@ -329,7 +393,6 @@ function clearPatterns() {
   state.lineNotes = [];
   state.midiLine = EMPTY_MIDI_LINE;
   renderMatrix();
-  renderStaff();
   setStatus("Patrones limpiados.");
 }
 
@@ -337,7 +400,6 @@ function clearChords() {
   state.chords = [];
   renderChords();
   rebuildLineNotes();
-  renderStaff();
   setStatus("Acordes borrados.");
 }
 
@@ -419,7 +481,6 @@ function onNoteOn(note) {
     state.chords.push(chord);
     renderChords();
     rebuildLineNotes();
-    renderStaff();
     setStatus(`Acorde capturado: ${chord.map(noteNumberToName).join(" ")}`);
     state.awaitingRelease = true;
     state.captureQueue = [];
@@ -499,6 +560,9 @@ function attachEvents() {
   elements.clear.addEventListener("click", clearPatterns);
   elements.play.addEventListener("click", playLine);
   elements.stop.addEventListener("click", stopPlayback);
+  if (elements.exportMidi) {
+    elements.exportMidi.addEventListener("click", exportMidi);
+  }
   elements.midiLearn.addEventListener("click", toggleMidiLearn);
   elements.generateFromChords.addEventListener("click", generateFromChords);
   elements.clearChords.addEventListener("click", clearChords);
@@ -506,7 +570,6 @@ function attachEvents() {
 
 renderCatalog();
 renderMatrix();
-renderStaff();
 renderChords();
 updateMidiLearnButton();
 attachEvents();

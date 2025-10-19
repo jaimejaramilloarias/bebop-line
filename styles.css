@@ -201,6 +201,11 @@ button.toggle.active .indicator {
   transition: transform 0.2s ease, border 0.2s ease;
 }
 
+.catalog-item.dragging {
+  opacity: 0.6;
+  transform: scale(0.96);
+}
+
 .catalog-item:hover,
 .catalog-item:focus {
   transform: translateY(-2px);
@@ -241,6 +246,20 @@ button.toggle.active .indicator {
   position: relative;
 }
 
+.matrix-group.drop-ready {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.matrix-pattern-id {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.6rem;
+  font-family: "Roboto Mono", monospace;
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
 .matrix-group::after {
   content: "";
   position: absolute;
@@ -272,24 +291,6 @@ button.toggle.active .indicator {
   height: 18px;
   border-radius: 50%;
   background: var(--accent);
-}
-
-.staff svg {
-  width: 100%;
-  height: auto;
-}
-
-.staff {
-  border-radius: 14px;
-  border: 1px solid var(--border);
-  padding: 1rem;
-  background: rgba(0, 0, 0, 0.02);
-  min-height: 160px;
-}
-
-.staff .vexflow-wrapper {
-  width: 100%;
-  overflow-x: auto;
 }
 
 .midi-panel {
