@@ -1,4 +1,4 @@
-const PATTERNS = [
+const FOUR_NOTE_PATTERN_IDS = [
   "1234",
   "4321",
   "1432",
@@ -9,7 +9,20 @@ const PATTERNS = [
   "1324",
   "1423",
   "4132"
-].map((text) => ({ id: text, values: text.split("").map(Number) }));
+];
+
+const THREE_NOTE_PATTERN_IDS = ["1231", "3213", "1321", "3123", "1213", "3231"];
+
+function createPattern(text) {
+  const values = text.split("").map(Number);
+  const maxVoice = values.reduce((max, value) => Math.max(max, value), 0);
+  return { id: text, values, maxVoice };
+}
+
+const FOUR_NOTE_PATTERNS = FOUR_NOTE_PATTERN_IDS.map(createPattern);
+const THREE_NOTE_PATTERNS = THREE_NOTE_PATTERN_IDS.map(createPattern);
+const ALL_PATTERNS = [...FOUR_NOTE_PATTERNS, ...THREE_NOTE_PATTERNS];
+const PATTERN_LOOKUP = new Map(ALL_PATTERNS.map((pattern) => [pattern.id, pattern]));
 
 const DEFAULT_CHORD = [60, 64, 67, 71]; // Cmaj7
 const DEFAULT_BPM = 240;
@@ -101,19 +114,46 @@ function randomChoice(list) {
   return list[Math.floor(Math.random() * list.length)];
 }
 
+function findPatternById(id) {
+  if (!id) return null;
+  return PATTERN_LOOKUP.get(id) || null;
+}
+
+function getChordVoiceCount(chord) {
+  const source = chord && chord.length ? chord : DEFAULT_CHORD;
+  const unique = new Set(source);
+  if (unique.size) {
+    return unique.size;
+  }
+  return Math.min(source.length || 0, 4) || 1;
+}
+
+function getPatternPoolForChord(chord) {
+  return getChordVoiceCount(chord) <= 3 ? THREE_NOTE_PATTERNS : FOUR_NOTE_PATTERNS;
+}
+
+function patternFitsChord(pattern, chord) {
+  if (!pattern) return false;
+  const voiceCount = getChordVoiceCount(chord);
+  if (voiceCount >= 4) {
+    return pattern.maxVoice === 4;
+  }
+  return pattern.maxVoice <= voiceCount;
+}
+
 function generateSequence(count, seed) {
   if (count <= 0) return [];
   const sequence = [];
-  let currentPattern = seed ? PATTERNS.find((p) => p.id === seed) : null;
-  if (!currentPattern) {
-    currentPattern = randomChoice(PATTERNS);
+  let currentPattern = findPatternById(seed);
+  if (!currentPattern || !FOUR_NOTE_PATTERNS.includes(currentPattern)) {
+    currentPattern = randomChoice(FOUR_NOTE_PATTERNS);
   }
   sequence.push(currentPattern);
 
   for (let i = 1; i < count; i++) {
     const previous = sequence[i - 1];
-    const candidates = PATTERNS.filter((p) => previous.values[3] !== p.values[0]);
-    const next = randomChoice(candidates.length ? candidates : PATTERNS);
+    const candidates = FOUR_NOTE_PATTERNS.filter((p) => previous.values[3] !== p.values[0]);
+    const next = randomChoice(candidates.length ? candidates : FOUR_NOTE_PATTERNS);
     sequence.push(next);
   }
   return sequence;
@@ -259,7 +299,7 @@ function handleMatrixDrop(event) {
   event.preventDefault();
   event.currentTarget.classList.remove("drop-ready");
   const patternId = event.dataTransfer.getData("text/pattern");
-  const pattern = PATTERNS.find((p) => p.id === patternId);
+  const pattern = findPatternById(patternId);
   if (!pattern) return;
   const index = Number(event.currentTarget.dataset.index);
   if (Number.isNaN(index)) return;
@@ -366,7 +406,7 @@ function exportMidi() {
 
 function renderCatalog() {
   elements.catalog.innerHTML = "";
-  PATTERNS.forEach((pattern) => {
+  FOUR_NOTE_PATTERNS.forEach((pattern) => {
     const item = document.createElement("button");
     item.className = "catalog-item";
     item.type = "button";
@@ -501,9 +541,6 @@ function onNoteOn(note) {
     .slice(-4);
   if (uniqueNotes.length >= 3) {
     const capturedNotes = uniqueNotes.map((item) => item.note);
-    if (capturedNotes.length === 3) {
-      capturedNotes.push(capturedNotes[0]);
-    }
     const chord = capturedNotes.slice(-4);
     state.chords.push(chord);
     renderChords();
@@ -514,7 +551,7 @@ function onNoteOn(note) {
     const originalLength = uniqueNotes.length;
     const baseMessage =
       originalLength === 3
-        ? `Acorde capturado (3 notas, primera duplicada): ${chord.map(noteNumberToName).join(" ")}`
+        ? `Acorde capturado (3 alturas): ${chord.map(noteNumberToName).join(" ")}`
         : `Acorde capturado: ${chord.map(noteNumberToName).join(" ")}`;
     setStatus(
       adjusted
@@ -571,7 +608,7 @@ async function toggleMidiLearn() {
       const hasInputs = state.midiAccess && state.midiAccess.inputs.size > 0;
       setStatus(
         hasInputs
-          ? "MIDI Learn encendido. Captura acordes de 4 notas (o 3, duplicando la primera)."
+          ? "MIDI Learn encendido. Captura acordes de 4 notas o de 3 alturas."
           : "MIDI Learn encendido. No se detectan entradas MIDI."
       );
     } else {
@@ -645,10 +682,13 @@ function sequenceAvoidsConsecutiveDuplicateNotes(sequence, chords) {
 function buildSequenceWithConstraints(chords, seed, enforceSeed) {
   const count = chords.length;
   const sequence = new Array(count);
-  const seedPattern = seed ? PATTERNS.find((p) => p.id === seed) : null;
+  const seedPattern = findPatternById(seed);
 
   function isPatternValidAtIndex(pattern, index) {
     const chord = chords[index] || DEFAULT_CHORD;
+    if (!patternFitsChord(pattern, chord)) {
+      return false;
+    }
     if (patternHasConsecutiveDuplicateNotes(pattern, chord)) {
       return false;
     }
@@ -668,12 +708,14 @@ function buildSequenceWithConstraints(chords, seed, enforceSeed) {
       return true;
     }
 
-    let candidates = PATTERNS;
-    if (index === 0 && seedPattern) {
+    const chord = chords[index] || DEFAULT_CHORD;
+    const pool = getPatternPoolForChord(chord);
+    let candidates = pool;
+    if (index === 0 && seedPattern && patternFitsChord(seedPattern, chord)) {
       if (enforceSeed) {
         candidates = [seedPattern];
       } else if (!sequence[0]) {
-        candidates = [seedPattern, ...PATTERNS.filter((p) => p !== seedPattern)];
+        candidates = [seedPattern, ...pool.filter((p) => p !== seedPattern)];
       }
     }
 
@@ -691,13 +733,47 @@ function buildSequenceWithConstraints(chords, seed, enforceSeed) {
   return dfs(0) ? sequence.slice() : null;
 }
 
+function patternsFitChords(groups, chords) {
+  for (let i = 0; i < groups.length; i++) {
+    const chord = chords[i] || DEFAULT_CHORD;
+    if (!patternFitsChord(groups[i], chord)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function generateRandomSequenceForChords(chords, seed) {
+  const count = chords.length;
+  if (!count) return [];
+  const sequence = new Array(count);
+  const firstChord = chords[0] || DEFAULT_CHORD;
+  let firstPattern = findPatternById(seed);
+  if (!patternFitsChord(firstPattern, firstChord) || !firstPattern) {
+    firstPattern = randomChoice(getPatternPoolForChord(firstChord));
+  }
+  sequence[0] = firstPattern;
+
+  for (let i = 1; i < count; i++) {
+    const chord = chords[i] || DEFAULT_CHORD;
+    const pool = getPatternPoolForChord(chord);
+    const previous = sequence[i - 1];
+    const filtered = pool.filter((pattern) => previous.values[3] !== pattern.values[0]);
+    const available = filtered.length ? filtered : pool;
+    sequence[i] = randomChoice(available);
+  }
+
+  return sequence;
+}
+
 function generateValidSequenceForChords(chords, seed) {
   const count = chords.length;
   if (!count) return [];
   const maxAttempts = 500;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const sequence = generateSequence(count, seed);
+    const sequence = generateRandomSequenceForChords(chords, seed);
     if (
+      patternsFitChords(sequence, chords) &&
       patternsHaveValidBoundaries(sequence, chords) &&
       sequenceAvoidsConsecutiveDuplicateNotes(sequence, chords)
     ) {
@@ -705,15 +781,16 @@ function generateValidSequenceForChords(chords, seed) {
     }
   }
   const enforcedSeed = buildSequenceWithConstraints(chords, seed, true);
-  if (enforcedSeed) {
+  if (enforcedSeed && patternsFitChords(enforcedSeed, chords)) {
     return enforcedSeed;
   }
   const flexibleSeed = buildSequenceWithConstraints(chords, seed, false);
-  if (flexibleSeed) {
+  if (flexibleSeed && patternsFitChords(flexibleSeed, chords)) {
     return flexibleSeed;
   }
-  const fallback = generateSequence(count, seed);
+  const fallback = generateRandomSequenceForChords(chords, null);
   if (
+    patternsFitChords(fallback, chords) &&
     patternsHaveValidBoundaries(fallback, chords) &&
     sequenceAvoidsConsecutiveDuplicateNotes(fallback, chords)
   ) {
@@ -726,6 +803,7 @@ function ensureValidPatternsAfterCapture() {
   if (!state.patternGroups.length) return false;
   if (state.patternGroups.length !== state.chords.length) return false;
   if (
+    patternsFitChords(state.patternGroups, state.chords) &&
     patternsHaveValidBoundaries(state.patternGroups, state.chords) &&
     sequenceAvoidsConsecutiveDuplicateNotes(state.patternGroups, state.chords)
   ) {
