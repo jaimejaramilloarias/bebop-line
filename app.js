@@ -54,16 +54,12 @@ const state = {
 const elements = {
   catalog: document.querySelector(".catalog-collections"),
   matrix: document.querySelector(".matrix"),
-  generate: document.getElementById("generate-patterns"),
-  clear: document.getElementById("clear-patterns"),
-  groupCount: document.getElementById("group-count"),
   tempo: document.getElementById("tempo"),
   tempoValue: document.getElementById("tempo-value"),
   play: document.getElementById("play-line"),
   stop: document.getElementById("stop-line"),
   exportMidi: document.getElementById("export-midi"),
   midiLearn: document.getElementById("midi-learn"),
-  generateFromChords: document.getElementById("generate-from-chords"),
   clearChords: document.getElementById("clear-chords"),
   midiOutput: document.getElementById("midi-output"),
   refreshMidiOutputs: document.getElementById("refresh-midi-outputs"),
@@ -306,24 +302,6 @@ function patternFitsChord(pattern, chord) {
   return pattern.maxVoice <= voiceCount;
 }
 
-function generateSequence(count, seed) {
-  if (count <= 0) return [];
-  const sequence = [];
-  let currentPattern = findPatternById(seed);
-  if (!currentPattern || !FOUR_NOTE_PATTERNS.includes(currentPattern)) {
-    currentPattern = randomChoice(FOUR_NOTE_PATTERNS);
-  }
-  sequence.push(currentPattern);
-
-  for (let i = 1; i < count; i++) {
-    const previous = sequence[i - 1];
-    const candidates = FOUR_NOTE_PATTERNS.filter((p) => previous.values[3] !== p.values[0]);
-    const next = randomChoice(candidates.length ? candidates : FOUR_NOTE_PATTERNS);
-    sequence.push(next);
-  }
-  return sequence;
-}
-
 function updatePatternGroups(groups) {
   state.patternGroups = groups;
   rebuildLineNotes();
@@ -375,7 +353,7 @@ function renderMatrix() {
   if (state.patternGroups.length === 0) {
     const empty = document.createElement("p");
     empty.textContent =
-      "Genera patrones o captura acordes para ver la matriz y arrastra una muestra sobre un compás para ajustar su orden.";
+      "Captura acordes con MIDI Learn para ver la matriz y arrastra una muestra sobre un compás para ajustar su orden.";
     elements.matrix.appendChild(empty);
     return;
   }
@@ -614,7 +592,7 @@ function renderCatalogSection(title, patterns, gridExtraClass = "") {
 
 function renderCatalog() {
   elements.catalog.innerHTML = "";
-  renderCatalogSection("Patrones de 4 notas", FOUR_NOTE_PATTERNS, "catalog-grid--four");
+  renderCatalogSection("Patrones de 4 alturas", FOUR_NOTE_PATTERNS, "catalog-grid--four");
   renderCatalogSection("Patrones de 3 alturas", THREE_NOTE_PATTERNS, "catalog-grid--three");
 }
 
@@ -634,25 +612,11 @@ function renderChords() {
   });
 }
 
-function handleGenerate() {
-  const count = Number(elements.groupCount.value) || 1;
-  const groups = generateSequence(count, state.seedPattern);
-  updatePatternGroups(groups);
-  setStatus(`Generados ${groups.length} grupos.`);
-}
-
-function clearPatterns() {
-  state.patternGroups = [];
-  state.lineNotes = [];
-  state.midiLine = EMPTY_MIDI_LINE;
-  renderMatrix();
-  setStatus("Patrones limpiados.");
-}
-
 function clearChords() {
   state.chords = [];
   renderChords();
-  rebuildLineNotes();
+  updatePatternGroups([]);
+  state.midiLine = EMPTY_MIDI_LINE;
   setStatus("Acordes borrados.");
 }
 
@@ -802,23 +766,24 @@ async function toggleMidiLearn() {
           : "MIDI Learn encendido. No se detectan entradas MIDI."
       );
     } else {
-      setStatus("MIDI Learn apagado.");
+      const result = generateLineFromCapturedChords();
+      if (result.success) {
+        setStatus(
+          `MIDI Learn apagado. Línea generada automáticamente para ${state.chords.length} acordes.`
+        );
+      } else if (result.reason === "empty") {
+        setStatus("MIDI Learn apagado. Captura acordes para generar la línea.");
+      } else {
+        setStatus(
+          "MIDI Learn apagado. No fue posible generar una línea con los acordes capturados."
+        );
+      }
     }
   } finally {
     if (elements.midiLearn) {
       elements.midiLearn.disabled = false;
     }
   }
-}
-
-function generateFromChords() {
-  if (!state.chords.length) {
-    setStatus("Captura acordes para generar la línea.");
-    return;
-  }
-  const groups = generateValidSequenceForChords(state.chords, state.seedPattern);
-  updatePatternGroups(groups);
-  setStatus(`Línea generada para ${state.chords.length} acordes.`);
 }
 
 function isIntervalWithinMajorSeventh(noteA, noteB) {
@@ -989,6 +954,20 @@ function generateValidSequenceForChords(chords, seed) {
   return [];
 }
 
+function generateLineFromCapturedChords() {
+  if (!state.chords.length) {
+    updatePatternGroups([]);
+    state.midiLine = EMPTY_MIDI_LINE;
+    return { success: false, reason: "empty" };
+  }
+  const groups = generateValidSequenceForChords(state.chords, state.seedPattern);
+  if (!groups.length) {
+    return { success: false, reason: "invalid" };
+  }
+  updatePatternGroups(groups);
+  return { success: true, groups };
+}
+
 function ensureValidPatternsAfterCapture() {
   if (!state.patternGroups.length) return false;
   if (state.patternGroups.length !== state.chords.length) return false;
@@ -1006,15 +985,12 @@ function ensureValidPatternsAfterCapture() {
 }
 
 function attachEvents() {
-  elements.generate.addEventListener("click", handleGenerate);
-  elements.clear.addEventListener("click", clearPatterns);
   elements.play.addEventListener("click", playLine);
   elements.stop.addEventListener("click", () => stopPlayback(true));
   if (elements.exportMidi) {
     elements.exportMidi.addEventListener("click", exportMidi);
   }
   elements.midiLearn.addEventListener("click", toggleMidiLearn);
-  elements.generateFromChords.addEventListener("click", generateFromChords);
   elements.clearChords.addEventListener("click", clearChords);
   if (elements.midiOutput) {
     elements.midiOutput.addEventListener("change", handleMidiOutputChange);

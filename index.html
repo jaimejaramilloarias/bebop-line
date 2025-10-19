@@ -22,12 +22,9 @@
     <main>
       <section class="controls" aria-labelledby="controls-title">
         <div class="section-title" id="controls-title">Generador de patrones</div>
-        <div class="control-group">
-          <label for="group-count">Cantidad de grupos</label>
-          <input id="group-count" type="number" min="1" max="32" value="4" />
-          <button id="generate-patterns" class="primary" title="Generar grupos aleatorios cumpliendo la regla de transición">Generar</button>
-          <button id="clear-patterns" title="Limpiar grupos generados">Limpiar</button>
-        </div>
+        <p class="controls-helper" aria-live="polite">
+          Captura acordes con MIDI Learn y la app generará la línea automáticamente.
+        </p>
       </section>
 
       <section class="catalog" aria-labelledby="catalog-title">
@@ -59,7 +56,6 @@
             <span class="state" aria-live="polite">(apagado)</span>
             <span class="indicator" aria-hidden="true"></span>
           </button>
-          <button id="generate-from-chords" title="Generar línea a partir de acordes capturados">Generar desde acordes</button>
         </div>
         <div class="control-group playback">
           <label for="tempo" class="tempo-label" title="Ajustar tempo en BPM">Tempo</label>
