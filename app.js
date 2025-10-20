@@ -1207,14 +1207,44 @@ function openPatternDictionaryWindow() {
   }
   const html = buildPatternDictionaryHtml();
   const features = "width=560,height=680,noopener=yes";
-  const ref = window.open("", "patternDictionary", features);
+  if (
+    typeof Blob === "undefined" ||
+    typeof URL === "undefined" ||
+    typeof URL.createObjectURL !== "function"
+  ) {
+    const fallbackRef = window.open("", "patternDictionary", features);
+    if (!fallbackRef) {
+      setStatus("El navegador bloqueó la ventana del diccionario.");
+      return;
+    }
+    fallbackRef.document.open();
+    fallbackRef.document.write(html);
+    fallbackRef.document.close();
+    if (typeof fallbackRef.focus === "function") {
+      fallbackRef.focus();
+    }
+    return;
+  }
+
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const ref = window.open(url, "patternDictionary", features);
   if (!ref) {
+    URL.revokeObjectURL(url);
     setStatus("El navegador bloqueó la ventana del diccionario.");
     return;
   }
-  ref.document.open();
-  ref.document.write(html);
-  ref.document.close();
+  const cleanup = () => {
+    URL.revokeObjectURL(url);
+    if (typeof ref.removeEventListener === "function") {
+      ref.removeEventListener("load", cleanup);
+    }
+  };
+  if (typeof ref.addEventListener === "function") {
+    ref.addEventListener("load", cleanup, { once: true });
+  } else {
+    setTimeout(cleanup, 2000);
+  }
   if (typeof ref.focus === "function") {
     ref.focus();
   }
