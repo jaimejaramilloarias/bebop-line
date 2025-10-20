@@ -70,6 +70,8 @@ const MIDI_PANEL_MAX_WIDTH = 360;
 const VISUALIZATIONS_MIN_WIDTH = 420;
 const PANEL_DIVIDER_WIDTH = 14;
 const RESPONSIVE_BREAKPOINT = 900;
+const VIRTUAL_KEYBOARD_FIRST_NOTE = 21;
+const VIRTUAL_KEYBOARD_LAST_NOTE = 108;
 
 const state = {
   patternGroups: [],
@@ -97,7 +99,10 @@ const state = {
   pendingReplacementDisarm: false,
   swingPercent: DEFAULT_SWING_PERCENT,
   transposeSemitones: 0,
-  midiPanelWidth: null
+  midiPanelWidth: null,
+  virtualKeyboardPendingNotes: new Set(),
+  virtualKeyboardKeyMap: new Map(),
+  virtualKeyboardPlaybackNotes: new Set()
 };
 
 const elements = {
@@ -128,7 +133,12 @@ const elements = {
   applyManualNoteGroups: document.getElementById("apply-manual-note-groups"),
   status: document.getElementById("status"),
   themeToggle: document.getElementById("theme-toggle"),
-  scoreViewer: document.getElementById("score-viewer")
+  scoreViewer: document.getElementById("score-viewer"),
+  virtualKeyboard: document.querySelector(".virtual-keyboard"),
+  virtualKeyboardKeysWrapper: document.querySelector(".virtual-keyboard__keys"),
+  virtualKeyboardWhiteKeys: document.querySelector(".virtual-keyboard__white-keys"),
+  virtualKeyboardBlackKeys: document.querySelector(".virtual-keyboard__black-keys"),
+  virtualKeyboardSelection: document.getElementById("virtual-keyboard-selection")
 };
 
 if (elements.tempo) {
@@ -487,12 +497,14 @@ function sendAllNotesOff() {
   if (!state.midiAccess || !state.playingMidiOutputId) {
     state.activePlaybackNotes.clear();
     state.playingMidiOutputId = null;
+    clearVirtualKeyboardPlaybackHighlights();
     return;
   }
   const output = state.midiAccess.outputs.get(state.playingMidiOutputId);
   if (!output) {
     state.activePlaybackNotes.clear();
     state.playingMidiOutputId = null;
+    clearVirtualKeyboardPlaybackHighlights();
     return;
   }
   state.activePlaybackNotes.forEach((note) => {
@@ -501,11 +513,13 @@ function sendAllNotesOff() {
   output.send([0xb0, 0x7b, 0x00]);
   state.activePlaybackNotes.clear();
   state.playingMidiOutputId = null;
+  clearVirtualKeyboardPlaybackHighlights();
 }
 
 function scheduleMidiPlayback(midiOutput, midiLine, bpm, onComplete) {
   state.activePlaybackNotes.clear();
   state.playingMidiOutputId = midiOutput.id;
+  clearVirtualKeyboardPlaybackHighlights();
 
   let maxEndMs = 0;
   midiLine.events.forEach((event, index) => {
@@ -517,11 +531,13 @@ function scheduleMidiPlayback(midiOutput, midiLine, bpm, onComplete) {
     const noteOnTimeout = setTimeout(() => {
       midiOutput.send([0x90, event.note, velocity]);
       state.activePlaybackNotes.add(event.note);
+      setVirtualKeyboardNotePlaying(event.note, true);
     }, startDelay);
 
     const noteOffTimeout = setTimeout(() => {
       midiOutput.send([0x80, event.note, 0]);
       state.activePlaybackNotes.delete(event.note);
+      setVirtualKeyboardNotePlaying(event.note, false);
     }, startDelay + durationDelay);
 
     maxEndMs = Math.max(maxEndMs, startDelay + durationDelay);
@@ -532,6 +548,7 @@ function scheduleMidiPlayback(midiOutput, midiLine, bpm, onComplete) {
   const cleanupTimeout = setTimeout(() => {
     state.activePlaybackNotes.clear();
     state.playingMidiOutputId = null;
+    clearVirtualKeyboardPlaybackHighlights();
     if (typeof onComplete === "function") {
       onComplete();
     }
@@ -1010,6 +1027,227 @@ const ACCIDENTAL_OFFSETS = new Map([
   ["b", -1],
   ["♭", -1]
 ]);
+
+function getCssNumericValue(computedStyles, property, fallback) {
+  if (!computedStyles) {
+    return fallback;
+  }
+  const raw = computedStyles.getPropertyValue(property);
+  const numeric = Number.parseFloat(raw);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function setVirtualKeyboardNoteSelected(note, selected) {
+  const key = state.virtualKeyboardKeyMap.get(note);
+  if (!key) {
+    return;
+  }
+  key.classList.toggle("virtual-keyboard__key--selected", selected);
+  key.setAttribute("aria-pressed", String(selected));
+}
+
+function setVirtualKeyboardNotePlaying(note, playing) {
+  const key = state.virtualKeyboardKeyMap.get(note);
+  if (!key) {
+    return;
+  }
+  if (playing) {
+    key.classList.add("virtual-keyboard__key--playing");
+    state.virtualKeyboardPlaybackNotes.add(note);
+  } else {
+    key.classList.remove("virtual-keyboard__key--playing");
+    state.virtualKeyboardPlaybackNotes.delete(note);
+  }
+}
+
+function clearVirtualKeyboardPlaybackHighlights() {
+  state.virtualKeyboardPlaybackNotes.forEach((note) => {
+    const key = state.virtualKeyboardKeyMap.get(note);
+    if (key) {
+      key.classList.remove("virtual-keyboard__key--playing");
+    }
+  });
+  state.virtualKeyboardPlaybackNotes.clear();
+}
+
+function updateVirtualKeyboardSelection() {
+  if (!elements.virtualKeyboardSelection) {
+    return;
+  }
+  const notes = Array.from(state.virtualKeyboardPendingNotes).sort((a, b) => a - b);
+  if (!notes.length) {
+    elements.virtualKeyboardSelection.textContent =
+      "Selecciona hasta cuatro notas y usa la barra espaciadora para guardar el grupo.";
+    return;
+  }
+  const names = notes.map(noteNumberToName);
+  const countText = notes.length === 1 ? "1 nota" : `${notes.length} notas`;
+  elements.virtualKeyboardSelection.textContent = `Grupo actual (${countText}): ${names.join(
+    " – "
+  )}.`;
+}
+
+function clearVirtualKeyboardPendingNotes() {
+  for (const note of state.virtualKeyboardPendingNotes) {
+    setVirtualKeyboardNoteSelected(note, false);
+  }
+  state.virtualKeyboardPendingNotes.clear();
+}
+
+function toggleVirtualKeyboardNote(note) {
+  if (!Number.isFinite(note)) {
+    return;
+  }
+  const pending = state.virtualKeyboardPendingNotes;
+  if (pending.has(note)) {
+    pending.delete(note);
+    setVirtualKeyboardNoteSelected(note, false);
+    updateVirtualKeyboardSelection();
+    return;
+  }
+  if (pending.size >= 4) {
+    setStatus(
+      "Cada grupo admite hasta 4 notas. Pulsa la barra espaciadora para guardar el grupo actual."
+    );
+    return;
+  }
+  pending.add(note);
+  setVirtualKeyboardNoteSelected(note, true);
+  updateVirtualKeyboardSelection();
+}
+
+function buildVirtualKeyboard() {
+  if (
+    typeof window === "undefined" ||
+    !elements.virtualKeyboardWhiteKeys ||
+    !elements.virtualKeyboardBlackKeys
+  ) {
+    return;
+  }
+
+  elements.virtualKeyboardWhiteKeys.innerHTML = "";
+  elements.virtualKeyboardBlackKeys.innerHTML = "";
+  state.virtualKeyboardKeyMap.clear();
+
+  const computedStyles = window.getComputedStyle(document.documentElement);
+  const whiteWidth = getCssNumericValue(computedStyles, "--vk-white-key-width", 36);
+  const blackWidth = getCssNumericValue(computedStyles, "--vk-black-key-width", 22);
+
+  const whiteFragment = document.createDocumentFragment();
+  const blackFragment = document.createDocumentFragment();
+
+  let whiteKeyCount = 0;
+  for (let note = VIRTUAL_KEYBOARD_FIRST_NOTE; note <= VIRTUAL_KEYBOARD_LAST_NOTE; note++) {
+    const noteName = NOTE_NAMES[note % 12];
+    const isSharp = noteName.includes("#");
+    const octave = Math.floor(note / 12) - 1;
+    const displayName = `${noteName.replace("#", "♯")}${octave}`;
+    const ariaName = isSharp
+      ? `Nota ${noteName[0]} sostenido ${octave}`
+      : `Nota ${noteName} ${octave}`;
+
+    if (!isSharp) {
+      const key = document.createElement("button");
+      key.type = "button";
+      key.className = "virtual-keyboard__key virtual-keyboard__key--white";
+      key.dataset.midi = String(note);
+      key.title = displayName;
+      key.setAttribute("aria-label", ariaName);
+      key.setAttribute("aria-pressed", "false");
+      key.addEventListener("click", () => toggleVirtualKeyboardNote(note));
+
+      if (noteName === "C") {
+        const marker = document.createElement("span");
+        marker.className = "virtual-keyboard__octave-label";
+        marker.textContent = `C${octave}`;
+        key.appendChild(marker);
+      }
+
+      whiteFragment.appendChild(key);
+      state.virtualKeyboardKeyMap.set(note, key);
+      whiteKeyCount += 1;
+      continue;
+    }
+
+    const key = document.createElement("button");
+    key.type = "button";
+    key.className = "virtual-keyboard__key virtual-keyboard__key--black";
+    key.dataset.midi = String(note);
+    key.title = displayName;
+    key.setAttribute("aria-label", ariaName);
+    key.setAttribute("aria-pressed", "false");
+    key.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleVirtualKeyboardNote(note);
+    });
+
+    const precedingIndex = Math.max(0, whiteKeyCount - 1);
+    const previousStart = precedingIndex * whiteWidth;
+    const nextStart = (precedingIndex + 1) * whiteWidth;
+    const center = previousStart + (nextStart - previousStart) / 2;
+    const left = Math.max(0, Math.round(center - blackWidth / 2));
+    key.style.left = `${left}px`;
+
+    blackFragment.appendChild(key);
+    state.virtualKeyboardKeyMap.set(note, key);
+  }
+
+  elements.virtualKeyboardWhiteKeys.appendChild(whiteFragment);
+  elements.virtualKeyboardBlackKeys.appendChild(blackFragment);
+
+  if (elements.virtualKeyboardKeysWrapper) {
+    const totalWidth = whiteKeyCount * whiteWidth;
+    elements.virtualKeyboardKeysWrapper.style.width = `${Math.round(totalWidth)}px`;
+  }
+
+  updateVirtualKeyboardSelection();
+}
+
+function commitVirtualKeyboardChord() {
+  const notes = Array.from(state.virtualKeyboardPendingNotes).sort((a, b) => a - b);
+  if (notes.length < 3) {
+    setStatus("Selecciona al menos 3 notas para guardar un grupo.");
+    return false;
+  }
+  if (notes.length > 4) {
+    setStatus("Cada grupo admite hasta 4 notas. Quita una nota antes de guardar.");
+    return false;
+  }
+
+  stopPlayback(false);
+  if (state.midiArmed) {
+    void setMidiLearnState(false, { skipGenerate: true });
+  }
+
+  const chord = notes.slice();
+  chord.voiceCount = chord.length;
+  state.chords.push(chord);
+  state.replacementIndex = null;
+  state.pendingReplacementDisarm = false;
+  state.lastCapturedChordIndex = null;
+  renderChords();
+
+  const result = generateLineFromCapturedChords();
+  let statusMessage = "Grupo guardado.";
+  if (result.success) {
+    const label = notes.map(noteNumberToName).join(" ");
+    statusMessage = `Grupo ${state.chords.length} guardado: ${label}.`;
+  } else if (result.reason === "invalid") {
+    updatePatternGroups([]);
+    state.midiLine = EMPTY_MIDI_LINE;
+    statusMessage =
+      "Grupo guardado, pero no fue posible generar una línea válida con todos los acordes.";
+  } else {
+    updatePatternGroups([]);
+    state.midiLine = EMPTY_MIDI_LINE;
+    statusMessage = "Grupo guardado. Captura más acordes para generar la línea.";
+  }
+
+  clearVirtualKeyboardPendingNotes();
+  updateVirtualKeyboardSelection();
+  setStatus(statusMessage);
+  return true;
+}
 
 function noteNumberToName(note) {
   const name = NOTE_NAMES[note % 12];
@@ -1723,6 +1961,7 @@ function stopPlayback(userInitiated = true) {
   state.scheduledNodes = [];
   state.scheduledTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
   state.scheduledTimeouts = [];
+  clearVirtualKeyboardPlaybackHighlights();
   setPlaybackState(false);
   sendAllNotesOff();
   if (userInitiated) {
@@ -1763,6 +2002,7 @@ function playMidiLineWithStatus(
 
   const audioCtx = ensureAudioContext();
   const now = audioCtx.currentTime;
+  clearVirtualKeyboardPlaybackHighlights();
   let maxEndSeconds = 0;
   midiLine.events.forEach((event, index) => {
     const { startSeconds, durationSeconds } = getSwingTiming(index, bpm, state.swingPercent);
@@ -1783,10 +2023,20 @@ function playMidiLineWithStatus(
     osc.stop(start + duration);
     state.scheduledNodes.push(osc);
     maxEndSeconds = Math.max(maxEndSeconds, startSeconds + duration);
+
+    const startMs = Math.max(0, Math.round(startSeconds * 1000));
+    const durationMs = Math.max(0, Math.round(durationSeconds * 1000));
+    const highlightOn = setTimeout(() => setVirtualKeyboardNotePlaying(event.note, true), startMs);
+    const highlightOff = setTimeout(
+      () => setVirtualKeyboardNotePlaying(event.note, false),
+      startMs + durationMs
+    );
+    state.scheduledTimeouts.push(highlightOn, highlightOff);
   });
   const totalDurationSeconds = maxEndSeconds;
   const finishTimeout = setTimeout(() => {
     setPlaybackState(false);
+    clearVirtualKeyboardPlaybackHighlights();
     if (resolvedEndStatus) {
       setStatus(resolvedEndStatus);
     }
@@ -1948,11 +2198,36 @@ function shouldIgnoreSpaceToggleTarget(target) {
   return false;
 }
 
+function handleVirtualKeyboardSpace(event) {
+  if (!elements.virtualKeyboard) {
+    return false;
+  }
+  const target = event.target;
+  const withinKeyboard =
+    target instanceof HTMLElement && elements.virtualKeyboard.contains(target);
+  if (!withinKeyboard && shouldIgnoreSpaceToggleTarget(target)) {
+    return false;
+  }
+  if (state.virtualKeyboardPendingNotes.size === 0) {
+    return false;
+  }
+  if (state.virtualKeyboardPendingNotes.size < 3) {
+    setStatus("Selecciona al menos 3 notas para guardar un grupo.");
+    return true;
+  }
+  commitVirtualKeyboardChord();
+  return true;
+}
+
 function handleGlobalKeydown(event) {
   if (event.code !== "Space" && event.key !== " ") {
     return;
   }
   if (event.altKey || event.ctrlKey || event.metaKey || event.repeat) {
+    return;
+  }
+  if (handleVirtualKeyboardSpace(event)) {
+    event.preventDefault();
     return;
   }
   if (shouldIgnoreSpaceToggleTarget(event.target)) {
@@ -2434,6 +2709,7 @@ function attachEvents() {
   }
 }
 
+buildVirtualKeyboard();
 renderCatalog();
 renderMatrix();
 renderChords();

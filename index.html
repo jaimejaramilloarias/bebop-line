@@ -205,6 +205,34 @@
       ></div>
     </main>
 
+    <section
+      class="virtual-keyboard"
+      aria-label="Teclado virtual para introducir acordes"
+    >
+      <div class="virtual-keyboard__header">
+        <div class="section-title">Teclado virtual</div>
+        <p class="virtual-keyboard__help" id="virtual-keyboard-instructions">
+          Haz clic en las teclas para seleccionar notas. Pulsa la barra espaciadora
+          para guardar el grupo actual y separar acordes.
+        </p>
+      </div>
+      <div
+        id="virtual-keyboard-selection"
+        class="virtual-keyboard__selection"
+        aria-live="polite"
+      ></div>
+      <div
+        class="virtual-keyboard__scroller"
+        role="group"
+        aria-describedby="virtual-keyboard-instructions virtual-keyboard-selection"
+      >
+        <div class="virtual-keyboard__keys">
+          <div class="virtual-keyboard__white-keys"></div>
+          <div class="virtual-keyboard__black-keys"></div>
+        </div>
+      </div>
+    </section>
+
     <div id="status" class="sr-only" aria-live="assertive"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/vexflow@3.0.9/releases/vexflow-min.js"></script>
