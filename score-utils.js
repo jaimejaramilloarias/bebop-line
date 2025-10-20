@@ -1,6 +1,6 @@
 export const NOTES_PER_MEASURE = 8;
 
-const VEXFLOW_PITCH_MAP = [
+const VEXFLOW_PITCH_MAP_SHARPS = [
   { step: "c" },
   { step: "c", accidental: "#" },
   { step: "d" },
@@ -15,6 +15,26 @@ const VEXFLOW_PITCH_MAP = [
   { step: "b" }
 ];
 
+const VEXFLOW_PITCH_MAP_FLATS = [
+  { step: "c" },
+  { step: "d", accidental: "b" },
+  { step: "d" },
+  { step: "e", accidental: "b" },
+  { step: "e" },
+  { step: "f" },
+  { step: "g", accidental: "b" },
+  { step: "g" },
+  { step: "a", accidental: "b" },
+  { step: "a" },
+  { step: "b", accidental: "b" },
+  { step: "b" }
+];
+
+const VEXFLOW_PITCH_MAPS = {
+  sharps: VEXFLOW_PITCH_MAP_SHARPS,
+  flats: VEXFLOW_PITCH_MAP_FLATS
+};
+
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
@@ -28,11 +48,13 @@ function sanitizeMidiNote(note) {
   return clamp(rounded, 0, 127);
 }
 
-export function midiNoteToVexFlowKey(note) {
+export function midiNoteToVexFlowKey(note, enharmonic = "auto") {
   const sanitized = sanitizeMidiNote(note);
   const pitchClass = sanitized % 12;
   const octave = Math.floor(sanitized / 12) - 1;
-  const mapping = VEXFLOW_PITCH_MAP[pitchClass] || VEXFLOW_PITCH_MAP[0];
+  const preference = enharmonic === "flats" ? "flats" : "sharps";
+  const map = VEXFLOW_PITCH_MAPS[preference] || VEXFLOW_PITCH_MAP_SHARPS;
+  const mapping = map[pitchClass] || map[0];
   return {
     key: `${mapping.step}/${octave}`,
     accidental: mapping.accidental || null

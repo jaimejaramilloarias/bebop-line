@@ -21,27 +21,48 @@
 
     <main>
       <section class="control-stack" aria-label="Controles principales">
-        <div class="control-bar" role="group" aria-label="Patrones y captura">
-          <button
-            id="open-pattern-dictionary"
-            class="control-button control-button--icon"
-            type="button"
-            title="Abrir el diccionario completo de patrones melódicos"
-            aria-label="Diccionario de patrones melódicos"
-          >
-            <span aria-hidden="true">📖</span>
-            <span class="control-button__label">Patrones</span>
-          </button>
+        <div class="control-bar control-bar--compact" role="group" aria-label="Acciones rápidas">
+          <div class="control-bar__icons" role="group" aria-label="Herramientas">
+            <button
+              id="open-pattern-dictionary"
+              class="control-button control-button--icon-only"
+              type="button"
+              title="Abrir el diccionario completo de patrones melódicos"
+              aria-label="Diccionario de patrones melódicos"
+            >
+              <span aria-hidden="true">📖</span>
+            </button>
+            <button
+              id="undo-action"
+              class="control-button control-button--icon-only"
+              type="button"
+              title="Deshacer el último cambio"
+              aria-label="Deshacer"
+            >
+              <span aria-hidden="true">↶</span>
+            </button>
+            <button
+              id="redo-action"
+              class="control-button control-button--icon-only"
+              type="button"
+              title="Rehacer el cambio revertido"
+              aria-label="Rehacer"
+            >
+              <span aria-hidden="true">↷</span>
+            </button>
+          </div>
           <button
             id="midi-learn"
-            class="control-button toggle"
+            class="control-button toggle control-button--icon-only"
             title="Activar o desactivar la captura MIDI continua"
             aria-pressed="false"
           >
-            <span class="label">MIDI Learn</span>
-            <span class="state" aria-live="polite">(apagado)</span>
+            <span class="sr-only label">MIDI Learn</span>
+            <span class="sr-only state" aria-live="polite">(apagado)</span>
             <span class="indicator" aria-hidden="true"></span>
+            <span class="control-button__icon" aria-hidden="true">🎛️</span>
           </button>
+          <div class="control-bar__spacer" aria-hidden="true"></div>
           <label class="midi-input control-field" for="tempo">
             <span class="midi-input__label">Tempo</span>
             <div class="midi-input__field">
@@ -76,81 +97,55 @@
           </label>
         </div>
 
-        <div class="control-bar" role="group" aria-label="Reproducción y exportación">
-          <button
-            id="play-toggle"
-            class="control-button primary"
-            title="Reproducir o detener la línea generada"
-            aria-pressed="false"
-          >
-            Reproducir
-          </button>
-          <button
-            id="regenerate-line"
-            class="control-button"
-            title="Generar una nueva línea usando los mismos acordes capturados"
-          >
-            Nueva línea
-          </button>
-          <button id="export-midi" class="control-button" title="Exportar la línea como archivo MIDI">
-            Exportar MIDI
-          </button>
-          <button id="clear-chords" class="control-button" title="Eliminar acordes capturados">
-            Borrar acordes
-          </button>
-          <div class="control-group control-group--inline" role="group" aria-label="Salida MIDI">
-            <label for="midi-output" class="control-field control-field--compact">
-              <span class="control-field__label">Salida</span>
-              <div class="control-field__input">
-                <select
-                  id="midi-output"
-                  title="Seleccionar un puerto MIDI de salida para reproducir la línea"
-                  aria-label="Puerto MIDI de salida"
-                >
-                  <option value="">Reproducción interna (WebAudio)</option>
-                </select>
-              </div>
-            </label>
-            <button
-              id="refresh-midi-outputs"
-              class="control-button control-button--ghost"
-              title="Actualizar la lista de puertos MIDI disponibles"
-              type="button"
-            >
-              Actualizar
-            </button>
-          </div>
-        </div>
-
-        <div class="control-bar" role="group" aria-label="Transposición y acordes">
-          <div class="control-group" role="group" aria-label="Transposición">
+        <div class="control-bar" role="group" aria-label="Transposición global y acordes">
+          <div class="control-group" role="group" aria-label="Transposición global">
             <span class="control-group__label">Transposición</span>
             <div class="transpose-controls">
-              <button type="button" id="transpose-down-octave" class="control-button" title="Bajar una octava">
-                −8va
+              <button
+                type="button"
+                id="transpose-down-octave"
+                class="control-button control-button--icon-only"
+                title="Bajar una octava"
+              >
+                <span aria-hidden="true">⏬</span>
+                <span class="sr-only">Bajar una octava</span>
               </button>
-              <button type="button" id="transpose-down-semitone" class="control-button" title="Bajar un semitono">
-                −1
+              <button
+                type="button"
+                id="transpose-down-semitone"
+                class="control-button control-button--icon-only"
+                title="Bajar un semitono"
+              >
+                <span aria-hidden="true">⏷</span>
+                <span class="sr-only">Bajar un semitono</span>
               </button>
               <span id="transpose-value" class="transpose-value" aria-live="polite"></span>
-              <button type="button" id="transpose-up-semitone" class="control-button" title="Subir un semitono">
-                +1
+              <button
+                type="button"
+                id="transpose-up-semitone"
+                class="control-button control-button--icon-only"
+                title="Subir un semitono"
+              >
+                <span aria-hidden="true">⏶</span>
+                <span class="sr-only">Subir un semitono</span>
               </button>
               <button
                 type="button"
                 id="transpose-up-octave"
-                class="control-button"
+                class="control-button control-button--icon-only"
                 title="Subir una octava"
               >
-                +8va
+                <span aria-hidden="true">⏫</span>
+                <span class="sr-only">Subir una octava</span>
               </button>
               <button
                 type="button"
                 id="transpose-reset"
-                class="control-button transpose-reset"
+                class="control-button control-button--icon-only transpose-reset"
                 title="Restablecer transposición"
               >
-                Reset
+                <span aria-hidden="true">⟲</span>
+                <span class="sr-only">Restablecer transposición</span>
               </button>
             </div>
           </div>
@@ -160,10 +155,140 @@
             <div class="captured-chords" aria-live="polite" aria-label="Acordes capturados"></div>
           </div>
         </div>
+
+        <div class="control-bar control-bar--compact" role="group" aria-label="Transposición de lectura y notación">
+          <div class="control-group control-group--inline" role="group" aria-label="Transposición de lectura">
+            <span class="control-group__label">Lectura</span>
+            <div class="view-transpose-buttons">
+              <button
+                type="button"
+                class="control-button control-button--icon-only view-transpose-button"
+                data-transpose-display="0"
+                id="view-transpose-concert"
+                title="Partitura en tono de concierto"
+                aria-pressed="true"
+              >
+                <span aria-hidden="true">🎼</span>
+                <span class="sr-only">Tono de concierto</span>
+              </button>
+              <button
+                type="button"
+                class="control-button view-transpose-button"
+                data-transpose-display="2"
+                title="Transponer la partitura una segunda mayor arriba (instrumentos en Bb)"
+              >
+                Bb
+              </button>
+              <button
+                type="button"
+                class="control-button view-transpose-button"
+                data-transpose-display="9"
+                title="Transponer la partitura una sexta mayor arriba (instrumentos en Eb)"
+              >
+                Eb
+              </button>
+              <button
+                type="button"
+                class="control-button view-transpose-button"
+                data-transpose-display="-12"
+                title="Transponer la partitura una octava abajo (guitarra)"
+              >
+                8↓
+              </button>
+            </div>
+          </div>
+
+          <div class="control-group control-group--inline" role="group" aria-label="Opciones de notación">
+            <span class="control-group__label">Notación</span>
+            <div class="notation-buttons">
+              <button
+                type="button"
+                id="enharmonic-toggle"
+                class="control-button control-button--icon-only"
+                title="Alternar la enarmonía preferida"
+              >
+                <span aria-hidden="true">♯♭</span>
+                <span class="sr-only">Alternar la enarmonía preferida</span>
+              </button>
+              <button
+                type="button"
+                id="clef-toggle"
+                class="control-button control-button--icon-only"
+                title="Cambiar entre clave de sol y clave de fa"
+              >
+                <span aria-hidden="true">𝄞/𝄢</span>
+                <span class="sr-only">Cambiar la clave utilizada en la partitura</span>
+              </button>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section class="visualizations" aria-labelledby="visualizations-title">
         <div class="section-title" id="visualizations-title">Distribución de alturas</div>
+        <div class="matrix-toolbar" role="group" aria-label="Transposición de patrones seleccionados">
+          <div class="matrix-toolbar__buttons">
+            <button
+              type="button"
+              id="matrix-clear-selection"
+              class="control-button control-button--icon-only"
+              title="Quitar la selección de compases"
+            >
+              <span aria-hidden="true">✕</span>
+              <span class="sr-only">Quitar selección</span>
+            </button>
+            <button
+              type="button"
+              id="matrix-transpose-down-octave"
+              class="control-button control-button--icon-only"
+              title="Bajar una octava los patrones seleccionados"
+            >
+              <span aria-hidden="true">⏬</span>
+              <span class="sr-only">Bajar una octava los patrones seleccionados</span>
+            </button>
+            <button
+              type="button"
+              id="matrix-transpose-down-semitone"
+              class="control-button control-button--icon-only"
+              title="Bajar un semitono los patrones seleccionados"
+            >
+              <span aria-hidden="true">⏷</span>
+              <span class="sr-only">Bajar un semitono los patrones seleccionados</span>
+            </button>
+            <button
+              type="button"
+              id="matrix-transpose-reset"
+              class="control-button control-button--icon-only"
+              title="Restablecer la transposición de los patrones seleccionados"
+            >
+              <span aria-hidden="true">⟲</span>
+              <span class="sr-only">Restablecer la transposición de los patrones seleccionados</span>
+            </button>
+            <button
+              type="button"
+              id="matrix-transpose-up-semitone"
+              class="control-button control-button--icon-only"
+              title="Subir un semitono los patrones seleccionados"
+            >
+              <span aria-hidden="true">⏶</span>
+              <span class="sr-only">Subir un semitono los patrones seleccionados</span>
+            </button>
+            <button
+              type="button"
+              id="matrix-transpose-up-octave"
+              class="control-button control-button--icon-only"
+              title="Subir una octava los patrones seleccionados"
+            >
+              <span aria-hidden="true">⏫</span>
+              <span class="sr-only">Subir una octava los patrones seleccionados</span>
+            </button>
+          </div>
+          <div
+            id="matrix-selection-summary"
+            class="matrix-toolbar__summary"
+            aria-live="polite"
+          ></div>
+        </div>
         <div
           class="matrix"
           aria-label="Matriz de alturas. Arrastra patrones para reordenar cada compás"
@@ -183,10 +308,67 @@
 
     </main>
 
-    <section
-      class="virtual-keyboard"
-      aria-label="Teclado virtual para introducir acordes"
-    >
+    <section class="playback-toolbar" aria-label="Controles de reproducción">
+      <div class="playback-toolbar__main">
+        <button
+          id="play-toggle"
+          class="control-button control-button--icon-only control-button--primary"
+          title="Reproducir o detener la línea generada"
+          aria-pressed="false"
+        >
+          <span aria-hidden="true">▶</span>
+          <span class="sr-only">Reproducir o detener la línea</span>
+        </button>
+        <button
+          id="regenerate-line"
+          class="control-button control-button--icon-only"
+          title="Generar una nueva línea usando los mismos acordes capturados"
+        >
+          <span aria-hidden="true">🎲</span>
+          <span class="sr-only">Generar una nueva línea</span>
+        </button>
+        <button
+          id="export-midi"
+          class="control-button control-button--icon-only"
+          title="Exportar la línea como archivo MIDI"
+        >
+          <span aria-hidden="true">💾</span>
+          <span class="sr-only">Exportar MIDI</span>
+        </button>
+        <button
+          id="clear-chords"
+          class="control-button control-button--icon-only"
+          title="Eliminar acordes capturados"
+        >
+          <span aria-hidden="true">🧹</span>
+          <span class="sr-only">Borrar acordes</span>
+        </button>
+      </div>
+      <div class="playback-toolbar__outputs" role="group" aria-label="Salida MIDI">
+        <span class="sr-only" id="midi-output-label">Puerto MIDI de salida</span>
+        <div class="playback-toolbar__select">
+          <span aria-hidden="true">🎧</span>
+          <select
+            id="midi-output"
+            aria-labelledby="midi-output-label"
+            title="Seleccionar un puerto MIDI de salida para reproducir la línea"
+          >
+            <option value="">Reproducción interna (WebAudio)</option>
+          </select>
+        </div>
+        <button
+          id="refresh-midi-outputs"
+          class="control-button control-button--icon-only"
+          title="Actualizar la lista de puertos MIDI disponibles"
+          type="button"
+        >
+          <span aria-hidden="true">🔄</span>
+          <span class="sr-only">Actualizar puertos MIDI</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="virtual-keyboard" aria-label="Teclado virtual para introducir acordes">
       <div class="virtual-keyboard__header">
         <div class="section-title">Teclado virtual</div>
       </div>
