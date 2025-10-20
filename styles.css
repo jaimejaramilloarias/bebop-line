@@ -171,6 +171,10 @@ main {
   grid-column: 2;
 }
 
+.section-title--score {
+  margin-top: 2rem;
+}
+
 @media (max-width: 900px) {
   main {
     grid-template-columns: 1fr;
@@ -509,6 +513,36 @@ button.toggle.active .indicator {
   right: -0.45rem;
   width: 2px;
   background: var(--grid-line);
+}
+
+.score-viewer {
+  margin-top: 1.5rem;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.02);
+  padding: 1rem;
+  min-height: 220px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+body.dark .score-viewer {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.score-viewer svg {
+  max-width: none;
+  height: auto;
+}
+
+.score-placeholder {
+  margin: 0;
+  text-align: center;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+body.dark .score-placeholder {
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .matrix-group:last-child::after,
