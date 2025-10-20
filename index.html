@@ -144,11 +144,22 @@
           aria-label="Matriz de alturas. Arrastra patrones para reordenar cada compás"
           role="img"
         ></div>
+        <div class="section-title section-title--score" id="score-title">Partitura generada</div>
+        <div
+          id="score-viewer"
+          class="score-viewer"
+          role="img"
+          aria-labelledby="score-title"
+          aria-live="polite"
+        >
+          <p class="score-placeholder">Captura acordes con MIDI Learn para generar la partitura.</p>
+        </div>
       </section>
     </main>
 
     <div id="status" class="sr-only" aria-live="assertive"></div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@verovio/vrv@4.2.1/build/verovio-toolkit.js"></script>
     <script type="module" src="app.js"></script>
   </body>
 </html>

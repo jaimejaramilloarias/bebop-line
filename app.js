@@ -48,11 +48,17 @@ const VELOCITY_BY_VOICE = {
 };
 const DEFAULT_SWING_PERCENT = 0;
 const TRANSPOSE_LIMIT = 36;
+const SCORE_PLACEHOLDER_MESSAGE = "Captura acordes con MIDI Learn para generar la partitura.";
+
+let verovioToolkitPromise = null;
+let scoreRenderRequestId = 0;
 
 const state = {
   patternGroups: [],
   seedPattern: null,
   chords: [],
+  noteEntries: [],
+  accentNoteIndices: [],
   lineNotes: [],
   midiLine: EMPTY_MIDI_LINE,
   midiAccess: null,
@@ -95,7 +101,8 @@ const elements = {
   refreshMidiOutputs: document.getElementById("refresh-midi-outputs"),
   chordsContainer: document.querySelector(".captured-chords"),
   status: document.getElementById("status"),
-  themeToggle: document.getElementById("theme-toggle")
+  themeToggle: document.getElementById("theme-toggle"),
+  scoreViewer: document.getElementById("score-viewer")
 };
 
 if (elements.tempo) {
@@ -463,15 +470,28 @@ function createNoteEntriesForPattern(pattern, chord, transposeSemitones = state.
 
 function rebuildLineNotes() {
   const noteEntries = [];
+  const accentIndices = [];
+  let globalIndex = 0;
   const totalGroups = state.patternGroups.length;
   for (let i = 0; i < totalGroups; i++) {
     const pattern = state.patternGroups[i];
     const chord = state.chords[i] || DEFAULT_CHORD;
     const entries = createNoteEntriesForPattern(pattern, chord);
+    if (pattern && Array.isArray(pattern.values) && pattern.values.length === 4) {
+      const maxVoice = pattern.values.reduce((max, value) => Math.max(max, value), 0);
+      const accentOffset = pattern.values.findIndex((voice) => voice === maxVoice);
+      if (accentOffset >= 0 && accentOffset < entries.length) {
+        accentIndices.push(globalIndex + accentOffset);
+      }
+    }
     noteEntries.push(...entries);
+    globalIndex += entries.length;
   }
+  state.noteEntries = noteEntries;
+  state.accentNoteIndices = accentIndices;
   state.lineNotes = noteEntries.map((entry) => entry.note);
-  state.midiLine = convertLineToMidi(noteEntries);
+  state.midiLine = noteEntries.length ? convertLineToMidi(noteEntries) : EMPTY_MIDI_LINE;
+  renderScore(noteEntries, accentIndices);
 }
 
 function getSortedChord(chord) {
@@ -526,6 +546,123 @@ function getSwingTiming(index, bpm, percent) {
   const startSeconds = pairIndex * quarterDuration + (isFirst ? 0 : firstDuration);
   const durationSeconds = isFirst ? firstDuration : secondDuration;
   return { startSeconds, durationSeconds };
+}
+
+function setScorePlaceholder(message = SCORE_PLACEHOLDER_MESSAGE) {
+  if (!elements.scoreViewer) return;
+  elements.scoreViewer.innerHTML = "";
+  const placeholder = document.createElement("p");
+  placeholder.className = "score-placeholder";
+  placeholder.textContent = message;
+  elements.scoreViewer.appendChild(placeholder);
+}
+
+function ensureVerovioToolkit() {
+  if (verovioToolkitPromise) {
+    return verovioToolkitPromise;
+  }
+  verovioToolkitPromise = new Promise((resolve) => {
+    if (!window.verovio || typeof window.verovio.toolkit !== "function") {
+      resolve(null);
+      return;
+    }
+    const toolkit = new window.verovio.toolkit();
+    toolkit.setOptions({
+      adjustPageHeight: 1,
+      pageHeight: 600,
+      pageWidth: 4800,
+      scale: 45,
+      unit: 6,
+      breaks: "none",
+      minLastJustification: 0
+    });
+    resolve(toolkit);
+  });
+  return verovioToolkitPromise;
+}
+
+function midiNoteToMeiAttributes(note) {
+  const sanitized = clamp(Math.round(note) || 0, 0, 127);
+  const mapping = MEI_PITCH_MAP[sanitized % 12] || MEI_PITCH_MAP[0];
+  const octave = Math.floor(sanitized / 12) - 1;
+  const parts = [`pname="${mapping.pname}"`, `oct="${octave}"`, "dur=\"8\""];
+  if (mapping.accid) {
+    parts.push(`accid="${mapping.accid}"`);
+  }
+  return parts.join(" ");
+}
+
+function buildMeiFromNoteEntries(noteEntries, accentIndices = []) {
+  const accentSet = new Set(accentIndices);
+  const measures = [];
+  const totalMeasures = Math.ceil(noteEntries.length / NOTES_PER_MEASURE);
+  for (let measureIndex = 0; measureIndex < totalMeasures; measureIndex++) {
+    const start = measureIndex * NOTES_PER_MEASURE;
+    const entries = [];
+    for (let offset = 0; offset < NOTES_PER_MEASURE; offset++) {
+      const noteIndex = start + offset;
+      if (noteIndex >= noteEntries.length) {
+        break;
+      }
+      const entry = noteEntries[noteIndex];
+      const attributes = midiNoteToMeiAttributes(entry.note);
+      const accent = accentSet.has(noteIndex) ? " artic=\"acc\"" : "";
+      entries.push(`<note ${attributes}${accent}/>`);
+    }
+    measures.push(
+      `<measure n="${measureIndex + 1}"><staff n="1"><layer>${entries.join("")}</layer></staff></measure>`
+    );
+  }
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei">
+  <music>
+    <body>
+      <mdiv>
+        <score>
+          <scoreDef meter.count="4" meter.unit="4" key.sig="0">
+            <staffGrp>
+              <staffDef n="1" lines="5" clef.shape="G" clef.line="2"/>
+            </staffGrp>
+          </scoreDef>
+          <section>
+            ${measures.join("\n            ")}
+          </section>
+        </score>
+      </mdiv>
+    </body>
+  </music>
+</mei>`;
+}
+
+function renderScore(noteEntries, accentIndices = []) {
+  if (!elements.scoreViewer) return;
+  const requestId = ++scoreRenderRequestId;
+  if (!noteEntries.length) {
+    setScorePlaceholder();
+    return;
+  }
+  ensureVerovioToolkit().then((toolkit) => {
+    if (requestId !== scoreRenderRequestId) {
+      return;
+    }
+    if (!toolkit) {
+      setScorePlaceholder("La partitura requiere soporte de Verovio en el navegador.");
+      return;
+    }
+    const mei = buildMeiFromNoteEntries(noteEntries, accentIndices);
+    try {
+      toolkit.loadData(mei);
+      if (requestId !== scoreRenderRequestId) {
+        return;
+      }
+      const svg = toolkit.renderToSVG(1, {});
+      elements.scoreViewer.innerHTML = svg;
+      elements.scoreViewer.scrollLeft = 0;
+    } catch (error) {
+      setScorePlaceholder("No se pudo renderizar la partitura generada.");
+    }
+  });
 }
 
 function renderMatrix() {
@@ -615,6 +752,20 @@ function renderMatrix() {
 }
 
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const MEI_PITCH_MAP = [
+  { pname: "c" },
+  { pname: "c", accid: "s" },
+  { pname: "d" },
+  { pname: "d", accid: "s" },
+  { pname: "e" },
+  { pname: "f" },
+  { pname: "f", accid: "s" },
+  { pname: "g" },
+  { pname: "g", accid: "s" },
+  { pname: "a" },
+  { pname: "a", accid: "s" },
+  { pname: "b" }
+];
 
 function noteNumberToName(note) {
   const name = NOTE_NAMES[note % 12];
