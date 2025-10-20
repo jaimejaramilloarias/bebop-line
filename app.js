@@ -70,16 +70,21 @@ const MIDI_PANEL_MAX_WIDTH = 360;
 const VISUALIZATIONS_MIN_WIDTH = 420;
 const PANEL_DIVIDER_WIDTH = 14;
 const RESPONSIVE_BREAKPOINT = 900;
-const VIRTUAL_KEYBOARD_FIRST_NOTE = 21;
-const VIRTUAL_KEYBOARD_LAST_NOTE = 108;
+const VIRTUAL_KEYBOARD_FIRST_NOTE = 48;
+const VIRTUAL_KEYBOARD_LAST_NOTE = 84;
 const VIRTUAL_KEYBOARD_PREVIEW_DURATION_MS = 600;
 const VIRTUAL_KEYBOARD_PREVIEW_VELOCITY = 96;
+const HISTORY_LIMIT = 100;
+const DEFAULT_CLEF = "treble";
+const DEFAULT_ENHARMONIC_MODE = "sharps";
+const MATRIX_SELECTION_EMPTY_MESSAGE = "Sin selección.";
 
 const state = {
   patternGroups: [],
   seedPattern: null,
   chords: [],
   noteEntries: [],
+  playbackNoteEntries: [],
   accentNoteIndices: [],
   lineNotes: [],
   midiLine: EMPTY_MIDI_LINE,
@@ -101,11 +106,19 @@ const state = {
   pendingReplacementDisarm: false,
   swingPercent: DEFAULT_SWING_PERCENT,
   transposeSemitones: 0,
+  displayTransposeSemitones: 0,
   midiPanelWidth: null,
   virtualKeyboardPendingNotes: new Set(),
   virtualKeyboardKeyMap: new Map(),
   virtualKeyboardPlaybackNotes: new Map(),
-  virtualKeyboardPreviewTimeouts: new Map()
+  virtualKeyboardPreviewTimeouts: new Map(),
+  groupTranspositions: [],
+  selectedPatternIndices: new Set(),
+  history: [],
+  future: [],
+  lastSnapshotSignature: null,
+  enharmonicMode: DEFAULT_ENHARMONIC_MODE,
+  scoreClef: DEFAULT_CLEF
 };
 
 const elements = {
@@ -115,7 +128,16 @@ const elements = {
   visualizations: document.querySelector(".visualizations"),
   catalog: document.querySelector(".catalog-collections"),
   patternDictionaryButton: document.getElementById("open-pattern-dictionary"),
+  undoAction: document.getElementById("undo-action"),
+  redoAction: document.getElementById("redo-action"),
   matrix: document.querySelector(".matrix"),
+  matrixClearSelection: document.getElementById("matrix-clear-selection"),
+  matrixTransposeDownSemitone: document.getElementById("matrix-transpose-down-semitone"),
+  matrixTransposeUpSemitone: document.getElementById("matrix-transpose-up-semitone"),
+  matrixTransposeDownOctave: document.getElementById("matrix-transpose-down-octave"),
+  matrixTransposeUpOctave: document.getElementById("matrix-transpose-up-octave"),
+  matrixTransposeReset: document.getElementById("matrix-transpose-reset"),
+  matrixSelectionSummary: document.getElementById("matrix-selection-summary"),
   tempo: document.getElementById("tempo"),
   swing: document.getElementById("swing"),
   transposeValue: document.getElementById("transpose-value"),
@@ -124,6 +146,9 @@ const elements = {
   transposeDownOctave: document.getElementById("transpose-down-octave"),
   transposeUpOctave: document.getElementById("transpose-up-octave"),
   transposeReset: document.getElementById("transpose-reset"),
+  viewTransposeButtons: Array.from(document.querySelectorAll(".view-transpose-button")),
+  enharmonicToggle: document.getElementById("enharmonic-toggle"),
+  clefToggle: document.getElementById("clef-toggle"),
   playToggle: document.getElementById("play-toggle"),
   newLine: document.getElementById("regenerate-line"),
   exportMidi: document.getElementById("export-midi"),
@@ -155,6 +180,133 @@ function setStatus(message) {
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
+}
+
+function cloneChordForSnapshot(chord) {
+  if (!Array.isArray(chord)) {
+    return { notes: [], voiceCount: 0 };
+  }
+  const notes = chord.slice();
+  const voiceCount = Number.isInteger(chord.voiceCount) ? chord.voiceCount : notes.length;
+  return { notes, voiceCount };
+}
+
+function restoreChordFromSnapshot(snapshotChord) {
+  const notes = Array.isArray(snapshotChord?.notes) ? snapshotChord.notes.slice() : [];
+  const chord = notes.slice();
+  const voiceCount = Number.isInteger(snapshotChord?.voiceCount)
+    ? snapshotChord.voiceCount
+    : notes.length;
+  chord.voiceCount = voiceCount;
+  return chord;
+}
+
+function captureSnapshot() {
+  return {
+    patternIds: state.patternGroups.map((pattern) => pattern?.id ?? null),
+    chords: state.chords.map(cloneChordForSnapshot),
+    transposeSemitones: state.transposeSemitones,
+    displayTransposeSemitones: state.displayTransposeSemitones,
+    groupTranspositions: state.groupTranspositions.slice(),
+    selectedIndices: Array.from(state.selectedPatternIndices),
+    enharmonicMode: state.enharmonicMode,
+    scoreClef: state.scoreClef
+  };
+}
+
+function snapshotSignature(snapshot) {
+  return JSON.stringify(snapshot);
+}
+
+function updateUndoRedoButtons() {
+  if (elements.undoAction) {
+    elements.undoAction.disabled = state.history.length <= 1;
+  }
+  if (elements.redoAction) {
+    elements.redoAction.disabled = state.future.length === 0;
+  }
+}
+
+function initializeHistory() {
+  const snapshot = captureSnapshot();
+  state.history = [snapshot];
+  state.future = [];
+  state.lastSnapshotSignature = snapshotSignature(snapshot);
+  updateUndoRedoButtons();
+}
+
+function restoreSnapshot(snapshot) {
+  state.transposeSemitones = snapshot.transposeSemitones ?? 0;
+  state.displayTransposeSemitones = snapshot.displayTransposeSemitones ?? 0;
+  state.enharmonicMode = snapshot.enharmonicMode ?? DEFAULT_ENHARMONIC_MODE;
+  state.scoreClef = snapshot.scoreClef ?? DEFAULT_CLEF;
+  state.groupTranspositions = Array.isArray(snapshot.groupTranspositions)
+    ? snapshot.groupTranspositions.slice()
+    : [];
+  state.chords = snapshot.chords.map(restoreChordFromSnapshot);
+  const patterns = snapshot.patternIds
+    .map((id) => (id ? PATTERN_LOOKUP.get(id) || null : null))
+    .filter((pattern) => pattern);
+  updatePatternGroups(patterns, { recordHistory: false, preserveTranspositions: true });
+  state.selectedPatternIndices = new Set(
+    (snapshot.selectedIndices || []).filter(
+      (index) => Number.isInteger(index) && index >= 0 && index < state.patternGroups.length
+    )
+  );
+  renderChords();
+  renderMatrix();
+  updateTransposeDisplay();
+  updateViewTransposeButtons();
+  updateEnharmonicToggle();
+  updateClefToggle();
+  updateMatrixSelectionSummary();
+}
+
+function commitHistory({ force = false } = {}) {
+  const snapshot = captureSnapshot();
+  const signature = snapshotSignature(snapshot);
+  if (!force && signature === state.lastSnapshotSignature) {
+    return;
+  }
+  state.history.push(snapshot);
+  if (state.history.length > HISTORY_LIMIT) {
+    state.history.shift();
+  }
+  state.future = [];
+  state.lastSnapshotSignature = signature;
+  updateUndoRedoButtons();
+}
+
+function undoLastAction() {
+  if (state.history.length <= 1) {
+    return;
+  }
+  const current = state.history.pop();
+  if (current) {
+    state.future.push(current);
+  }
+  const snapshot = state.history[state.history.length - 1];
+  if (snapshot) {
+    state.lastSnapshotSignature = snapshotSignature(snapshot);
+    restoreSnapshot(snapshot);
+    updateUndoRedoButtons();
+    setStatus("Se deshizo el último cambio.");
+  }
+}
+
+function redoLastAction() {
+  if (!state.future.length) {
+    return;
+  }
+  const snapshot = state.future.pop();
+  if (!snapshot) {
+    return;
+  }
+  state.history.push(snapshot);
+  state.lastSnapshotSignature = snapshotSignature(snapshot);
+  restoreSnapshot(snapshot);
+  updateUndoRedoButtons();
+  setStatus("Se rehízo el cambio deshecho.");
 }
 
 function isSingleColumnLayout() {
@@ -347,7 +499,7 @@ function updateTransposeDisplay() {
   elements.transposeValue.textContent = describeTranspose(state.transposeSemitones);
 }
 
-function setTransposeSemitones(value, { announce = true } = {}) {
+function setTransposeSemitones(value, { announce = true, recordHistory = true } = {}) {
   const normalized = clamp(Math.round(value) || 0, -TRANSPOSE_LIMIT, TRANSPOSE_LIMIT);
   if (normalized === state.transposeSemitones) {
     updateTransposeDisplay();
@@ -357,6 +509,9 @@ function setTransposeSemitones(value, { announce = true } = {}) {
   state.transposeSemitones = normalized;
   updateTransposeDisplay();
   rebuildLineNotes();
+  if (recordHistory) {
+    commitHistory();
+  }
   if (announce) {
     const message = normalized
       ? `Transposición ajustada a ${describeTranspose(normalized)}.`
@@ -370,6 +525,78 @@ function changeTranspose(delta) {
   setTransposeSemitones(state.transposeSemitones + delta);
 }
 
+function updateViewTransposeButtons() {
+  if (!elements.viewTransposeButtons) return;
+  elements.viewTransposeButtons.forEach((button) => {
+    const value = Number(button.dataset.transposeDisplay || "0");
+    const active = value === state.displayTransposeSemitones;
+    button.setAttribute("aria-pressed", String(active));
+  });
+}
+
+function setDisplayTransposeSemitones(value, { announce = true, recordHistory = true } = {}) {
+  const normalized = clamp(Math.round(value) || 0, -TRANSPOSE_LIMIT, TRANSPOSE_LIMIT);
+  if (normalized === state.displayTransposeSemitones) {
+    updateViewTransposeButtons();
+    return state.displayTransposeSemitones;
+  }
+  stopPlayback(false);
+  state.displayTransposeSemitones = normalized;
+  updateViewTransposeButtons();
+  rebuildLineNotes();
+  if (recordHistory) {
+    commitHistory();
+  }
+  if (announce) {
+    const message = normalized
+      ? `Lectura transpuesta ${describeTranspose(normalized)}.`
+      : "Lectura en tono de concierto.";
+    setStatus(message);
+  }
+  return normalized;
+}
+
+function updateEnharmonicToggle() {
+  if (!elements.enharmonicToggle) return;
+  const preferFlats = state.enharmonicMode === "flats";
+  elements.enharmonicToggle.setAttribute("aria-pressed", String(preferFlats));
+  elements.enharmonicToggle.title = preferFlats
+    ? "Preferir sostenidos en la notación"
+    : "Preferir bemoles en la notación";
+}
+
+function toggleEnharmonicMode() {
+  state.enharmonicMode = state.enharmonicMode === "flats" ? "sharps" : "flats";
+  stopPlayback(false);
+  updateEnharmonicToggle();
+  rebuildLineNotes();
+  commitHistory();
+  const message =
+    state.enharmonicMode === "flats"
+      ? "Notación ajustada para preferir bemoles."
+      : "Notación ajustada para preferir sostenidos.";
+  setStatus(message);
+}
+
+function updateClefToggle() {
+  if (!elements.clefToggle) return;
+  const isBass = state.scoreClef === "bass";
+  elements.clefToggle.setAttribute("aria-pressed", String(isBass));
+  elements.clefToggle.title = isBass
+    ? "Cambiar a clave de sol"
+    : "Cambiar a clave de fa";
+}
+
+function toggleClef() {
+  state.scoreClef = state.scoreClef === "bass" ? "treble" : "bass";
+  stopPlayback(false);
+  updateClefToggle();
+  rebuildLineNotes();
+  commitHistory();
+  const message = state.scoreClef === "bass" ? "Partitura en clave de fa." : "Partitura en clave de sol.";
+  setStatus(message);
+}
+
 function setPlaybackState(playing) {
   state.isPlaying = playing;
   updatePlayToggleButton();
@@ -377,12 +604,21 @@ function setPlaybackState(playing) {
 
 function updatePlayToggleButton() {
   if (!elements.playToggle) return;
-  elements.playToggle.textContent = state.isPlaying ? "Detener" : "Reproducir";
+  const icon = elements.playToggle.querySelector("span[aria-hidden]");
+  if (icon) {
+    icon.textContent = state.isPlaying ? "⏹" : "▶";
+  }
+  const srLabel = elements.playToggle.querySelector(".sr-only");
+  if (srLabel) {
+    srLabel.textContent = state.isPlaying
+      ? "Detener la reproducción"
+      : "Reproducir la línea";
+  }
   elements.playToggle.setAttribute("aria-pressed", String(state.isPlaying));
-  elements.playToggle.classList.toggle("primary", !state.isPlaying);
+  elements.playToggle.classList.toggle("control-button--primary", !state.isPlaying);
   elements.playToggle.title = state.isPlaying
-    ? "Detener reproducción"
-    : "Reproducir línea generada";
+    ? "Detener la línea generada"
+    : "Reproducir la línea generada";
 }
 
 async function ensureMidiAccess() {
@@ -560,12 +796,16 @@ function scheduleMidiPlayback(midiOutput, midiLine, bpm, onComplete) {
 function updateMidiLearnButton() {
   if (!elements.midiLearn) return;
   elements.midiLearn.classList.toggle("active", state.midiArmed);
-  elements.midiLearn.classList.toggle("primary", state.midiArmed);
+  elements.midiLearn.classList.toggle("control-button--primary", state.midiArmed);
   elements.midiLearn.setAttribute("aria-pressed", String(state.midiArmed));
   const stateLabel = elements.midiLearn.querySelector(".state");
   if (stateLabel) {
     stateLabel.textContent = state.midiArmed ? "(encendido)" : "(apagado)";
   }
+  const title = state.midiArmed
+    ? "Desactivar la captura MIDI continua"
+    : "Activar la captura MIDI continua";
+  elements.midiLearn.title = title;
 }
 
 function restoreTheme() {
@@ -651,10 +891,28 @@ function patternFitsChord(pattern, chord) {
   return pattern.maxVoice <= voiceCount;
 }
 
-function updatePatternGroups(groups) {
-  state.patternGroups = groups;
+function updatePatternGroups(groups, { recordHistory = true, preserveTranspositions = false } = {}) {
+  state.patternGroups = Array.isArray(groups) ? groups.slice() : [];
+  if (preserveTranspositions) {
+    const next = new Array(state.patternGroups.length).fill(0);
+    for (let i = 0; i < next.length; i++) {
+      next[i] = state.groupTranspositions[i] || 0;
+    }
+    state.groupTranspositions = next;
+    state.selectedPatternIndices = new Set(
+      Array.from(state.selectedPatternIndices).filter(
+        (index) => Number.isInteger(index) && index >= 0 && index < state.patternGroups.length
+      )
+    );
+  } else {
+    state.groupTranspositions = new Array(state.patternGroups.length).fill(0);
+    state.selectedPatternIndices.clear();
+  }
   rebuildLineNotes();
   renderMatrix();
+  if (recordHistory) {
+    commitHistory();
+  }
 }
 
 function createNoteEntriesForPattern(pattern, chord, transposeSemitones = state.transposeSemitones) {
@@ -670,29 +928,36 @@ function createNoteEntriesForPattern(pattern, chord, transposeSemitones = state.
 }
 
 function rebuildLineNotes() {
-  const noteEntries = [];
+  const displayEntries = [];
+  const playbackEntries = [];
   const accentIndices = [];
   let globalIndex = 0;
   const totalGroups = state.patternGroups.length;
   for (let i = 0; i < totalGroups; i++) {
     const pattern = state.patternGroups[i];
     const chord = state.chords[i] || DEFAULT_CHORD;
-    const entries = createNoteEntriesForPattern(pattern, chord);
+    const groupTranspose = state.groupTranspositions[i] || 0;
+    const playbackTranspose = state.transposeSemitones + groupTranspose;
+    const displayTranspose = playbackTranspose + state.displayTransposeSemitones;
+    const playbackGroup = createNoteEntriesForPattern(pattern, chord, playbackTranspose);
+    const displayGroup = createNoteEntriesForPattern(pattern, chord, displayTranspose);
     if (pattern && Array.isArray(pattern.values) && pattern.values.length === 4) {
       const maxVoice = pattern.values.reduce((max, value) => Math.max(max, value), 0);
       const accentOffset = pattern.values.findIndex((voice) => voice === maxVoice);
-      if (accentOffset >= 0 && accentOffset < entries.length) {
+      if (accentOffset >= 0 && accentOffset < displayGroup.length) {
         accentIndices.push(globalIndex + accentOffset);
       }
     }
-    noteEntries.push(...entries);
-    globalIndex += entries.length;
+    playbackEntries.push(...playbackGroup);
+    displayEntries.push(...displayGroup);
+    globalIndex += displayGroup.length;
   }
-  state.noteEntries = noteEntries;
+  state.noteEntries = displayEntries;
+  state.playbackNoteEntries = playbackEntries;
   state.accentNoteIndices = accentIndices;
-  state.lineNotes = noteEntries.map((entry) => entry.note);
-  state.midiLine = noteEntries.length ? convertLineToMidi(noteEntries) : EMPTY_MIDI_LINE;
-  renderScore(noteEntries, accentIndices);
+  state.lineNotes = playbackEntries.map((entry) => entry.note);
+  state.midiLine = playbackEntries.length ? convertLineToMidi(playbackEntries) : EMPTY_MIDI_LINE;
+  renderScore(displayEntries, accentIndices);
 }
 
 function getSortedChord(chord) {
@@ -758,13 +1023,21 @@ function setScorePlaceholder(message = SCORE_PLACEHOLDER_MESSAGE) {
   elements.scoreViewer.appendChild(placeholder);
 }
 
-function createRestNote(VF) {
-  return new VF.StaveNote({ clef: "treble", keys: ["b/4"], duration: "8r" });
+function createRestNote(VF, clef) {
+  const restKey = clef === "bass" ? "d/3" : "b/4";
+  return new VF.StaveNote({ clef, keys: [restKey], duration: "8r" });
 }
 
-function createStaveNoteFromMidi(VF, midi, accent = false, accidentalOverride) {
-  const { key, accidental } = midiNoteToVexFlowKey(midi);
-  const note = new VF.StaveNote({ clef: "treble", keys: [key], duration: "8" });
+function createStaveNoteFromMidi(
+  VF,
+  midi,
+  accent = false,
+  accidentalOverride,
+  clef,
+  enharmonicMode
+) {
+  const { key, accidental } = midiNoteToVexFlowKey(midi, enharmonicMode);
+  const note = new VF.StaveNote({ clef, keys: [key], duration: "8" });
   const finalAccidental =
     accidentalOverride === undefined ? accidental : accidentalOverride;
   if (finalAccidental) {
@@ -819,6 +1092,8 @@ function renderScore(noteEntries, accentIndices = []) {
   const width = columns * staveWidth + spacingBetweenMeasures + horizontalPadding * 2;
   const height =
     rows * staveHeight + Math.max(rows - 1, 0) * rowSpacing + verticalPadding + bottomPadding;
+  const clef = state.scoreClef || DEFAULT_CLEF;
+  const enharmonicMode = state.enharmonicMode || DEFAULT_ENHARMONIC_MODE;
 
   const renderer = new VF.Renderer(container, VF.Renderer.Backends.SVG);
   renderer.resize(width, height);
@@ -832,8 +1107,8 @@ function renderScore(noteEntries, accentIndices = []) {
       horizontalPadding + column * (staveWidth + measureSpacing);
     const y = verticalPadding + row * (staveHeight + rowSpacing);
     const stave = new VF.Stave(x, y, staveWidth);
-    if (index === 0) {
-      stave.addClef("treble");
+    if (column === 0) {
+      stave.addClef(clef);
       let addedTimeSignature = false;
       if (VF.TimeSignature) {
         try {
@@ -869,9 +1144,12 @@ function renderScore(noteEntries, accentIndices = []) {
 
     const tickables = measure.map((entry) => {
       if (entry.type === "rest") {
-        return createRestNote(VF);
+        return createRestNote(VF, clef);
       }
-      const { key, accidental: defaultAccidental } = midiNoteToVexFlowKey(entry.midi);
+      const { key, accidental: defaultAccidental } = midiNoteToVexFlowKey(
+        entry.midi,
+        enharmonicMode
+      );
       const previousAccidental = accidentalState.get(key);
       let accidentalOverride;
 
@@ -891,7 +1169,14 @@ function renderScore(noteEntries, accentIndices = []) {
         accidentalState.set(key, null);
       }
 
-      return createStaveNoteFromMidi(VF, entry.midi, entry.accent, accidentalOverride);
+      return createStaveNoteFromMidi(
+        VF,
+        entry.midi,
+        entry.accent,
+        accidentalOverride,
+        clef,
+        enharmonicMode
+      );
     });
 
     const voice = new VF.Voice({ num_beats: 4, beat_value: 4 }).setStrict(false);
@@ -918,6 +1203,129 @@ function renderScore(noteEntries, accentIndices = []) {
   });
 }
 
+function formatTransposeBadge(value) {
+  if (!value) {
+    return "";
+  }
+  const sign = value > 0 ? "+" : "−";
+  return `${sign}${Math.abs(value)}`;
+}
+
+function updateMatrixSelectionSummary() {
+  if (!elements.matrixSelectionSummary) return;
+  const count = state.selectedPatternIndices.size;
+  if (!count) {
+    elements.matrixSelectionSummary.textContent = MATRIX_SELECTION_EMPTY_MESSAGE;
+    return;
+  }
+  const indices = Array.from(state.selectedPatternIndices).sort((a, b) => a - b);
+  const offsets = indices.map((index) => state.groupTranspositions[index] || 0);
+  const uniform = offsets.every((value) => value === offsets[0]);
+  const descriptor = uniform ? describeTranspose(offsets[0]) : "Ajustes mixtos";
+  if (count === 1) {
+    elements.matrixSelectionSummary.textContent = `Compás ${indices[0] + 1}: ${descriptor}.`;
+    return;
+  }
+  elements.matrixSelectionSummary.textContent = `${count} compases: ${descriptor}.`;
+}
+
+function clearMatrixSelection({ announce = false } = {}) {
+  if (!state.selectedPatternIndices.size) {
+    updateMatrixSelectionSummary();
+    return;
+  }
+  state.selectedPatternIndices.clear();
+  renderMatrix();
+  updateMatrixSelectionSummary();
+  if (announce) {
+    setStatus("Selección de compases borrada.");
+  }
+}
+
+function handleMatrixGroupClick(event, index) {
+  if (!Number.isInteger(index) || index < 0 || index >= state.patternGroups.length) {
+    return;
+  }
+  const target = event.target;
+  if (target instanceof HTMLElement && target.closest(".matrix-group-button")) {
+    return;
+  }
+  const additive = event.metaKey || event.ctrlKey || event.shiftKey;
+  if (!additive) {
+    if (state.selectedPatternIndices.size === 1 && state.selectedPatternIndices.has(index)) {
+      state.selectedPatternIndices.clear();
+    } else {
+      state.selectedPatternIndices = new Set([index]);
+    }
+  } else {
+    if (state.selectedPatternIndices.has(index)) {
+      state.selectedPatternIndices.delete(index);
+    } else {
+      state.selectedPatternIndices.add(index);
+    }
+  }
+  renderMatrix();
+  updateMatrixSelectionSummary();
+}
+
+function transposeSelectedGroups(delta) {
+  if (!state.selectedPatternIndices.size) {
+    setStatus("Selecciona al menos un compás para ajustar su transposición.");
+    return;
+  }
+  let changed = false;
+  const applied = [];
+  state.selectedPatternIndices.forEach((index) => {
+    const current = state.groupTranspositions[index] || 0;
+    const next = clamp(current + delta, -TRANSPOSE_LIMIT, TRANSPOSE_LIMIT);
+    if (next !== current) {
+      state.groupTranspositions[index] = next;
+      changed = true;
+      applied.push({ index, value: next });
+    }
+  });
+  if (!changed) {
+    setStatus("Los compases seleccionados ya tienen ese ajuste.");
+    return;
+  }
+  stopPlayback(false);
+  rebuildLineNotes();
+  renderMatrix();
+  updateMatrixSelectionSummary();
+  commitHistory();
+  if (applied.length === 1) {
+    const { index, value } = applied[0];
+    const descriptor = value ? describeTranspose(value) : "Sin transposición";
+    setStatus(`Compás ${index + 1} ajustado a ${descriptor}.`);
+  } else {
+    setStatus("Transposición aplicada a los compases seleccionados.");
+  }
+}
+
+function resetSelectedGroupTranspositions() {
+  if (!state.selectedPatternIndices.size) {
+    setStatus("No hay compases seleccionados para restablecer.");
+    return;
+  }
+  let changed = false;
+  state.selectedPatternIndices.forEach((index) => {
+    if ((state.groupTranspositions[index] || 0) !== 0) {
+      state.groupTranspositions[index] = 0;
+      changed = true;
+    }
+  });
+  if (!changed) {
+    setStatus("Los compases seleccionados ya estaban sin ajuste.");
+    return;
+  }
+  stopPlayback(false);
+  rebuildLineNotes();
+  renderMatrix();
+  updateMatrixSelectionSummary();
+  commitHistory();
+  setStatus("Transposición restablecida en los compases seleccionados.");
+}
+
 function renderMatrix() {
   elements.matrix.innerHTML = "";
   if (state.patternGroups.length === 0) {
@@ -925,6 +1333,7 @@ function renderMatrix() {
     empty.textContent =
       "Captura acordes con MIDI Learn para ver la matriz y arrastra una muestra sobre un compás para ajustar su orden.";
     elements.matrix.appendChild(empty);
+    updateMatrixSelectionSummary();
     return;
   }
   const groupsPerRow = Math.max(1, calculateGroupsPerRow());
@@ -946,6 +1355,10 @@ function renderMatrix() {
       groupEl.addEventListener("dragover", handleMatrixDragOver);
       groupEl.addEventListener("dragleave", handleMatrixDragLeave);
       groupEl.addEventListener("drop", handleMatrixDrop);
+      groupEl.addEventListener("click", (event) => handleMatrixGroupClick(event, j));
+      if (state.selectedPatternIndices.has(j)) {
+        groupEl.classList.add("matrix-group--selected");
+      }
 
       const playButton = document.createElement("button");
       playButton.type = "button";
@@ -1002,6 +1415,14 @@ function renderMatrix() {
       label.textContent = pattern.id;
       groupEl.appendChild(label);
 
+      const transposeValue = state.groupTranspositions[j] || 0;
+      if (transposeValue) {
+        const badge = document.createElement("span");
+        badge.className = "matrix-group-transpose";
+        badge.textContent = formatTransposeBadge(transposeValue);
+        groupEl.appendChild(badge);
+      }
+
       if (j === rowEnd - 1) {
         groupEl.classList.add("matrix-group--last-in-row");
       }
@@ -1010,6 +1431,7 @@ function renderMatrix() {
     }
     elements.matrix.appendChild(rowEl);
   }
+  updateMatrixSelectionSummary();
 }
 
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -1644,9 +2066,11 @@ function handleMatrixDrop(event) {
     );
     return;
   }
+  stopPlayback(false);
   state.patternGroups[index] = pattern;
   rebuildLineNotes();
   renderMatrix();
+  commitHistory();
   setStatus(`Patrón ${pattern.id} aplicado al compás ${index + 1}.`);
 }
 
@@ -1850,11 +2274,22 @@ async function removeChordAt(index) {
   }
 
   state.chords.splice(index, 1);
+  if (index < state.groupTranspositions.length) {
+    state.groupTranspositions.splice(index, 1);
+  }
+  const updatedSelection = new Set();
+  state.selectedPatternIndices.forEach((value) => {
+    if (value === index) {
+      return;
+    }
+    updatedSelection.add(value > index ? value - 1 : value);
+  });
+  state.selectedPatternIndices = updatedSelection;
   const groups = state.patternGroups.slice();
   if (index < groups.length) {
     groups.splice(index, 1);
   }
-  updatePatternGroups(groups);
+  updatePatternGroups(groups, { preserveTranspositions: true });
 
   if (!state.chords.length) {
     state.midiLine = EMPTY_MIDI_LINE;
@@ -2026,7 +2461,8 @@ function playPatternAtIndex(index) {
     return;
   }
   const chord = state.chords[index] || DEFAULT_CHORD;
-  const entries = createNoteEntriesForPattern(pattern, chord);
+  const playbackTranspose = state.transposeSemitones + (state.groupTranspositions[index] || 0);
+  const entries = createNoteEntriesForPattern(pattern, chord, playbackTranspose);
   if (!entries.length) {
     setStatus(`No hay notas disponibles para el compás ${index + 1}.`);
     return;
@@ -2117,6 +2553,7 @@ function regeneratePatternAtIndex(index) {
   state.patternGroups[index] = replacement;
   rebuildLineNotes();
   renderMatrix();
+  commitHistory();
   setStatus(`Variación aplicada: patrón ${replacement.id} en el compás ${index + 1}.`);
 }
 
@@ -2249,6 +2686,7 @@ function onNoteOn(note) {
   const adjusted = ensureValidPatternsAfterCapture();
   if (!adjusted) {
     rebuildLineNotes();
+    commitHistory();
   }
   const prefix =
     state.replacementIndex !== null && state.replacementIndex === targetIndex
@@ -2292,6 +2730,7 @@ function extendCapturedChordIfNeeded(note, time) {
   const adjusted = ensureValidPatternsAfterCapture();
   if (!adjusted) {
     rebuildLineNotes();
+    commitHistory();
   }
   const prefix = state.replacementIndex !== null ? "Acorde reemplazado" : "Acorde actualizado";
   const baseMessage =
@@ -2620,6 +3059,12 @@ function ensureValidPatternsAfterCapture() {
 }
 
 function attachEvents() {
+  if (elements.undoAction) {
+    elements.undoAction.addEventListener("click", undoLastAction);
+  }
+  if (elements.redoAction) {
+    elements.redoAction.addEventListener("click", redoLastAction);
+  }
   if (elements.transposeDownSemitone) {
     elements.transposeDownSemitone.addEventListener("click", () => changeTranspose(-1));
   }
@@ -2635,6 +3080,34 @@ function attachEvents() {
   if (elements.transposeReset) {
     elements.transposeReset.addEventListener("click", () => setTransposeSemitones(0));
   }
+  if (elements.matrixClearSelection) {
+    elements.matrixClearSelection.addEventListener("click", () =>
+      clearMatrixSelection({ announce: true })
+    );
+  }
+  if (elements.matrixTransposeDownSemitone) {
+    elements.matrixTransposeDownSemitone.addEventListener("click", () => transposeSelectedGroups(-1));
+  }
+  if (elements.matrixTransposeUpSemitone) {
+    elements.matrixTransposeUpSemitone.addEventListener("click", () => transposeSelectedGroups(1));
+  }
+  if (elements.matrixTransposeDownOctave) {
+    elements.matrixTransposeDownOctave.addEventListener("click", () => transposeSelectedGroups(-12));
+  }
+  if (elements.matrixTransposeUpOctave) {
+    elements.matrixTransposeUpOctave.addEventListener("click", () => transposeSelectedGroups(12));
+  }
+  if (elements.matrixTransposeReset) {
+    elements.matrixTransposeReset.addEventListener("click", resetSelectedGroupTranspositions);
+  }
+  if (elements.viewTransposeButtons && elements.viewTransposeButtons.length) {
+    elements.viewTransposeButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const value = Number(button.dataset.transposeDisplay || "0");
+        setDisplayTransposeSemitones(value);
+      });
+    });
+  }
   if (elements.playToggle) {
     elements.playToggle.addEventListener("click", handlePlaybackToggle);
   }
@@ -2649,6 +3122,12 @@ function attachEvents() {
   }
   elements.midiLearn.addEventListener("click", toggleMidiLearn);
   elements.clearChords.addEventListener("click", clearChords);
+  if (elements.enharmonicToggle) {
+    elements.enharmonicToggle.addEventListener("click", toggleEnharmonicMode);
+  }
+  if (elements.clefToggle) {
+    elements.clefToggle.addEventListener("click", toggleClef);
+  }
   if (elements.midiOutput) {
     elements.midiOutput.addEventListener("change", handleMidiOutputChange);
   }
@@ -2673,5 +3152,10 @@ renderMatrix();
 renderChords();
 updateMidiLearnButton();
 updatePlayToggleButton();
+updateViewTransposeButtons();
+updateEnharmonicToggle();
+updateClefToggle();
+updateMatrixSelectionSummary();
+initializeHistory();
 attachEvents();
 refreshMidiOutputs();

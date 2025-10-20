@@ -9,6 +9,7 @@ import {
 test('midiNoteToVexFlowKey clamps MIDI input and reports accidentals', () => {
   assert.deepStrictEqual(midiNoteToVexFlowKey(60), { key: 'c/4', accidental: null });
   assert.deepStrictEqual(midiNoteToVexFlowKey(61), { key: 'c/4', accidental: '#' });
+  assert.deepStrictEqual(midiNoteToVexFlowKey(61, 'flats'), { key: 'd/4', accidental: 'b' });
   assert.deepStrictEqual(midiNoteToVexFlowKey(59.6), { key: 'c/4', accidental: null });
   assert.deepStrictEqual(midiNoteToVexFlowKey(200), { key: 'g/9', accidental: null });
   assert.deepStrictEqual(midiNoteToVexFlowKey('not-a-number'), { key: 'c/-1', accidental: null });
