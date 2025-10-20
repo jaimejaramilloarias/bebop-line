@@ -72,6 +72,8 @@ const PANEL_DIVIDER_WIDTH = 14;
 const RESPONSIVE_BREAKPOINT = 900;
 const VIRTUAL_KEYBOARD_FIRST_NOTE = 21;
 const VIRTUAL_KEYBOARD_LAST_NOTE = 108;
+const VIRTUAL_KEYBOARD_PREVIEW_DURATION_MS = 600;
+const VIRTUAL_KEYBOARD_PREVIEW_VELOCITY = 96;
 
 const state = {
   patternGroups: [],
@@ -102,7 +104,8 @@ const state = {
   midiPanelWidth: null,
   virtualKeyboardPendingNotes: new Set(),
   virtualKeyboardKeyMap: new Map(),
-  virtualKeyboardPlaybackNotes: new Set()
+  virtualKeyboardPlaybackNotes: new Map(),
+  virtualKeyboardPreviewTimeouts: new Map()
 };
 
 const elements = {
@@ -1051,23 +1054,45 @@ function setVirtualKeyboardNotePlaying(note, playing) {
   if (!key) {
     return;
   }
+  const counts = state.virtualKeyboardPlaybackNotes;
+  const current = counts.get(note) || 0;
   if (playing) {
-    key.classList.add("virtual-keyboard__key--playing");
-    state.virtualKeyboardPlaybackNotes.add(note);
-  } else {
+    const next = current + 1;
+    if (next === 1) {
+      key.classList.add("virtual-keyboard__key--playing");
+    }
+    counts.set(note, next);
+    return;
+  }
+  const next = Math.max(0, current - 1);
+  if (next === 0) {
     key.classList.remove("virtual-keyboard__key--playing");
-    state.virtualKeyboardPlaybackNotes.delete(note);
+    counts.delete(note);
+  } else {
+    counts.set(note, next);
   }
 }
 
 function clearVirtualKeyboardPlaybackHighlights() {
-  state.virtualKeyboardPlaybackNotes.forEach((note) => {
+  state.virtualKeyboardPlaybackNotes.forEach((_, note) => {
     const key = state.virtualKeyboardKeyMap.get(note);
     if (key) {
       key.classList.remove("virtual-keyboard__key--playing");
     }
   });
   state.virtualKeyboardPlaybackNotes.clear();
+  const previews = Array.from(state.virtualKeyboardPreviewTimeouts.values());
+  state.virtualKeyboardPreviewTimeouts.clear();
+  previews.forEach((data) => {
+    clearTimeout(data.timeoutId);
+    if (typeof data.cleanup === "function") {
+      try {
+        data.cleanup();
+      } catch (_) {
+        // ignore cleanup errors
+      }
+    }
+  });
 }
 
 function updateVirtualKeyboardSelection() {
@@ -1092,6 +1117,88 @@ function clearVirtualKeyboardPendingNotes() {
     setVirtualKeyboardNoteSelected(note, false);
   }
   state.virtualKeyboardPendingNotes.clear();
+}
+
+function scheduleVirtualKeyboardPreviewCleanup(note, cleanup) {
+  const existing = state.virtualKeyboardPreviewTimeouts.get(note);
+  if (existing) {
+    clearTimeout(existing.timeoutId);
+    if (typeof existing.cleanup === "function") {
+      try {
+        existing.cleanup();
+      } catch (_) {
+        // ignore errors from previous preview cleanup
+      }
+    }
+  }
+  const timeoutId = setTimeout(() => {
+    try {
+      cleanup();
+    } finally {
+      state.virtualKeyboardPreviewTimeouts.delete(note);
+    }
+  }, VIRTUAL_KEYBOARD_PREVIEW_DURATION_MS);
+  state.virtualKeyboardPreviewTimeouts.set(note, { timeoutId, cleanup });
+}
+
+function previewVirtualKeyboardNote(note) {
+  if (!Number.isFinite(note)) {
+    return;
+  }
+  if (!state.virtualKeyboardKeyMap.has(note)) {
+    return;
+  }
+
+  setVirtualKeyboardNotePlaying(note, true);
+
+  const midiOutput = getSelectedMidiOutput();
+  if (midiOutput) {
+    const velocity = clamp(Math.round(VIRTUAL_KEYBOARD_PREVIEW_VELOCITY), 1, 127);
+    try {
+      midiOutput.send([0x90, note, velocity]);
+    } catch (_) {
+      setVirtualKeyboardNotePlaying(note, false);
+      return;
+    }
+    const cleanup = () => {
+      try {
+        midiOutput.send([0x80, note, 0]);
+      } catch (_) {
+        // ignore failures when sending note off
+      }
+      setVirtualKeyboardNotePlaying(note, false);
+    };
+    scheduleVirtualKeyboardPreviewCleanup(note, cleanup);
+    return;
+  }
+
+  const audioCtx = ensureAudioContext();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  const now = audioCtx.currentTime;
+  const durationSeconds = VIRTUAL_KEYBOARD_PREVIEW_DURATION_MS / 1000;
+  const attackEnd = now + Math.min(0.02, durationSeconds * 0.3);
+  const peakGain = 0.6;
+
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(peakGain, attackEnd);
+  gain.gain.linearRampToValueAtTime(0, now + durationSeconds);
+
+  osc.type = "sine";
+  osc.frequency.value = midiToFrequency(note);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + durationSeconds);
+
+  const cleanup = () => {
+    try {
+      osc.stop();
+    } catch (_) {
+      // ignore errors when stopping preview oscillator
+    }
+    setVirtualKeyboardNotePlaying(note, false);
+  };
+  scheduleVirtualKeyboardPreviewCleanup(note, cleanup);
 }
 
 function toggleVirtualKeyboardNote(note) {
@@ -1154,7 +1261,10 @@ function buildVirtualKeyboard() {
       key.title = displayName;
       key.setAttribute("aria-label", ariaName);
       key.setAttribute("aria-pressed", "false");
-      key.addEventListener("click", () => toggleVirtualKeyboardNote(note));
+      key.addEventListener("click", () => {
+        previewVirtualKeyboardNote(note);
+        toggleVirtualKeyboardNote(note);
+      });
 
       if (noteName === "C") {
         const marker = document.createElement("span");
@@ -1178,6 +1288,7 @@ function buildVirtualKeyboard() {
     key.setAttribute("aria-pressed", "false");
     key.addEventListener("click", (event) => {
       event.stopPropagation();
+      previewVirtualKeyboardNote(note);
       toggleVirtualKeyboardNote(note);
     });
 
@@ -2248,6 +2359,7 @@ function handleMidiMessage(event) {
 }
 
 function onNoteOn(note) {
+  setVirtualKeyboardNotePlaying(note, true);
   if (!state.midiArmed) return;
   const now = performance.now();
   state.captureQueue.push({ note, time: now });
@@ -2345,6 +2457,7 @@ function extendCapturedChordIfNeeded(note, time) {
 }
 
 async function onNoteOff(note) {
+  setVirtualKeyboardNotePlaying(note, false);
   if (!state.midiArmed) return;
   state.activeNotes.delete(note);
   state.captureQueue = state.captureQueue.filter((item) => item.note !== note);
