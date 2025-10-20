@@ -162,8 +162,8 @@ main {
 .midi-flyout {
   position: absolute;
   top: 50%;
-  left: calc(100% + 0.65rem);
-  transform: translateY(-50%) translateX(-8px);
+  right: calc(100% + 0.65rem);
+  transform: translateY(-50%) translateX(8px);
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 14px;
