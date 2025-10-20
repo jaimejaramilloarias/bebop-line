@@ -598,14 +598,14 @@ function renderScore(noteEntries, accentIndices = []) {
   const container = elements.scoreViewer;
   container.innerHTML = "";
 
-  const measuresPerRow = 1;
-  const staveWidth = 320;
+  const measuresPerRow = 2;
+  const staveWidth = 360;
   const staveHeight = 120;
-  const measureSpacing = 12;
-  const rowSpacing = 48;
-  const horizontalPadding = 24;
-  const verticalPadding = 30;
-  const bottomPadding = 30;
+  const measureSpacing = 56;
+  const rowSpacing = 60;
+  const horizontalPadding = 56;
+  const verticalPadding = 40;
+  const bottomPadding = 48;
   const totalMeasures = measures.length;
   const rows = Math.ceil(totalMeasures / measuresPerRow);
   const columns = Math.min(totalMeasures, measuresPerRow);
@@ -684,7 +684,7 @@ function renderScore(noteEntries, accentIndices = []) {
     });
 
     const formatter = new VF.Formatter();
-    formatter.joinVoices([voice]).format([voice], staveWidth - 36);
+    formatter.joinVoices([voice]).format([voice], staveWidth - 80);
     voice.draw(context, stave);
     beams.forEach((beam) => beam.setContext(context).draw());
   });
