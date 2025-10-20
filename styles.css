@@ -568,7 +568,7 @@ button.toggle.active .indicator {
 
 @media (min-width: 960px) {
   main {
-    grid-template-columns: minmax(320px, 420px) 1fr;
+    grid-template-columns: minmax(520px, 620px) 1fr;
     align-items: start;
   }
 
