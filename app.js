@@ -54,6 +54,22 @@ const VELOCITY_BY_VOICE = {
 const DEFAULT_SWING_PERCENT = 28;
 const TRANSPOSE_LIMIT = 36;
 const SCORE_PLACEHOLDER_MESSAGE = "Captura acordes con MIDI Learn para generar la partitura.";
+const MATRIX_MIN_GROUP_WIDTH = 168;
+const MATRIX_GAP_PX = 12;
+const MATRIX_MAX_GROUPS_PER_ROW = 6;
+const SCORE_MIN_STAVE_WIDTH = 260;
+const SCORE_MAX_STAVE_WIDTH = 360;
+const SCORE_MAX_MEASURES_PER_ROW = 4;
+const SCORE_MEASURE_SPACING = 48;
+const SCORE_HORIZONTAL_PADDING = 40;
+const SCORE_VERTICAL_PADDING = 40;
+const SCORE_BOTTOM_PADDING = 48;
+const SCORE_ROW_SPACING = 60;
+const MIDI_PANEL_MIN_WIDTH = 72;
+const MIDI_PANEL_MAX_WIDTH = 360;
+const VISUALIZATIONS_MIN_WIDTH = 420;
+const PANEL_DIVIDER_WIDTH = 14;
+const RESPONSIVE_BREAKPOINT = 900;
 
 const state = {
   patternGroups: [],
@@ -80,10 +96,15 @@ const state = {
   lastCapturedChordIndex: null,
   pendingReplacementDisarm: false,
   swingPercent: DEFAULT_SWING_PERCENT,
-  transposeSemitones: 0
+  transposeSemitones: 0,
+  midiPanelWidth: null
 };
 
 const elements = {
+  layout: document.querySelector("main"),
+  midiPanel: document.querySelector(".midi-panel"),
+  panelResizer: document.querySelector(".panel-resizer"),
+  visualizations: document.querySelector(".visualizations"),
   catalog: document.querySelector(".catalog-collections"),
   matrix: document.querySelector(".matrix"),
   tempo: document.getElementById("tempo"),
@@ -120,6 +141,159 @@ function setStatus(message) {
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
+}
+
+function isSingleColumnLayout() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  if (typeof window.matchMedia === "function") {
+    return window.matchMedia(`(max-width: ${RESPONSIVE_BREAKPOINT}px)`).matches;
+  }
+  return window.innerWidth <= RESPONSIVE_BREAKPOINT;
+}
+
+function getInnerWidth(element) {
+  if (!element) return 0;
+  const styles = getComputedStyle(element);
+  const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0;
+  const paddingRight = Number.parseFloat(styles.paddingRight) || 0;
+  return element.clientWidth - paddingLeft - paddingRight;
+}
+
+function calculateGroupsPerRow() {
+  const totalGroups = state.patternGroups.length || 0;
+  const maxGroups = totalGroups ? Math.min(MATRIX_MAX_GROUPS_PER_ROW, totalGroups) : MATRIX_MAX_GROUPS_PER_ROW;
+  const availableWidth = getInnerWidth(elements.visualizations);
+  if (!Number.isFinite(availableWidth) || availableWidth <= 0) {
+    return Math.min(4, Math.max(1, maxGroups));
+  }
+  const raw = Math.floor((availableWidth + MATRIX_GAP_PX) / (MATRIX_MIN_GROUP_WIDTH + MATRIX_GAP_PX));
+  const fallback = Math.min(4, Math.max(1, maxGroups));
+  const columns = clamp(raw, 1, Math.max(1, maxGroups));
+  return columns || fallback || 1;
+}
+
+function calculateMeasuresPerRow(totalMeasures) {
+  if (!totalMeasures) return 0;
+  const maxMeasures = Math.max(1, Math.min(totalMeasures, SCORE_MAX_MEASURES_PER_ROW));
+  const availableWidth = getInnerWidth(elements.scoreViewer);
+  if (!Number.isFinite(availableWidth) || availableWidth <= 0) {
+    return Math.min(2, maxMeasures);
+  }
+  const raw = Math.floor((availableWidth + SCORE_MEASURE_SPACING) / (SCORE_MIN_STAVE_WIDTH + SCORE_MEASURE_SPACING));
+  const fallback = Math.min(2, maxMeasures);
+  const columns = clamp(raw, 1, maxMeasures);
+  return columns || fallback || 1;
+}
+
+function setMidiPanelWidth(width) {
+  if (!elements.layout || !Number.isFinite(width)) {
+    return null;
+  }
+  const layoutWidth = elements.layout.clientWidth || 0;
+  let maxWidth = MIDI_PANEL_MAX_WIDTH;
+  if (layoutWidth) {
+    const maxByLayout = layoutWidth - VISUALIZATIONS_MIN_WIDTH - PANEL_DIVIDER_WIDTH;
+    if (Number.isFinite(maxByLayout)) {
+      maxWidth = Math.max(MIDI_PANEL_MIN_WIDTH, Math.min(MIDI_PANEL_MAX_WIDTH, maxByLayout));
+    }
+  }
+  const clampedWidth = clamp(Math.round(width), MIDI_PANEL_MIN_WIDTH, maxWidth);
+  elements.layout.style.setProperty("--midi-panel-width", `${clampedWidth}px`);
+  state.midiPanelWidth = clampedWidth;
+  return clampedWidth;
+}
+
+function refreshLayoutAfterResize() {
+  renderMatrix();
+  renderScore(state.noteEntries ?? [], state.accentNoteIndices ?? []);
+}
+
+let resizeAnimationFrame = null;
+
+function handlePanelResizePointerDown(event) {
+  if (event.button !== undefined && event.button !== 0 && event.pointerType === "mouse") {
+    return;
+  }
+  if (isSingleColumnLayout()) {
+    return;
+  }
+  if (!elements.panelResizer || !elements.midiPanel || !elements.layout) {
+    return;
+  }
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  event.preventDefault();
+  const initialWidth = elements.midiPanel.getBoundingClientRect().width;
+  const startX = event.clientX;
+  const pointerId = event.pointerId;
+
+  elements.panelResizer.classList.add("panel-resizer--active");
+  if (typeof elements.panelResizer.setPointerCapture === "function") {
+    try {
+      elements.panelResizer.setPointerCapture(pointerId);
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  const handleMove = (moveEvent) => {
+    const delta = moveEvent.clientX - startX;
+    setMidiPanelWidth(initialWidth + delta);
+  };
+
+  const stop = () => {
+    if (elements.panelResizer.classList.contains("panel-resizer--active")) {
+      elements.panelResizer.classList.remove("panel-resizer--active");
+    }
+    if (typeof elements.panelResizer.releasePointerCapture === "function") {
+      try {
+        elements.panelResizer.releasePointerCapture(pointerId);
+      } catch (_) {
+        // ignore
+      }
+    }
+    window.removeEventListener("pointermove", handleMove);
+    window.removeEventListener("pointerup", stop);
+    window.removeEventListener("pointercancel", stop);
+    refreshLayoutAfterResize();
+  };
+
+  window.addEventListener("pointermove", handleMove);
+  window.addEventListener("pointerup", stop);
+  window.addEventListener("pointercancel", stop);
+}
+
+function handlePanelResizeDoubleClick(event) {
+  if (!elements.layout) {
+    return;
+  }
+  event.preventDefault();
+  elements.layout.style.removeProperty("--midi-panel-width");
+  state.midiPanelWidth = null;
+  refreshLayoutAfterResize();
+}
+
+function handleWindowResize() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  if (resizeAnimationFrame !== null) {
+    window.cancelAnimationFrame(resizeAnimationFrame);
+  }
+  resizeAnimationFrame = window.requestAnimationFrame(() => {
+    resizeAnimationFrame = null;
+    if (state.midiPanelWidth !== null) {
+      const applied = setMidiPanelWidth(state.midiPanelWidth);
+      if (applied !== null) {
+        state.midiPanelWidth = applied;
+      }
+    }
+    refreshLayoutAfterResize();
+  });
 }
 
 function setSwingPercent(percent, { updateInput = false } = {}) {
@@ -598,19 +772,26 @@ function renderScore(noteEntries, accentIndices = []) {
   const container = elements.scoreViewer;
   container.innerHTML = "";
 
-  const measuresPerRow = 2;
-  const staveWidth = 360;
-  const staveHeight = 120;
-  const measureSpacing = 56;
-  const rowSpacing = 60;
-  const horizontalPadding = 56;
-  const verticalPadding = 40;
-  const bottomPadding = 48;
   const totalMeasures = measures.length;
-  const rows = Math.ceil(totalMeasures / measuresPerRow);
+  const measuresPerRow = Math.max(1, calculateMeasuresPerRow(totalMeasures));
   const columns = Math.min(totalMeasures, measuresPerRow);
-  const width =
-    columns * staveWidth + Math.max(columns - 1, 0) * measureSpacing + horizontalPadding * 2;
+  const rows = Math.ceil(totalMeasures / measuresPerRow);
+  const staveHeight = 120;
+  const measureSpacing = SCORE_MEASURE_SPACING;
+  const rowSpacing = SCORE_ROW_SPACING;
+  const horizontalPadding = SCORE_HORIZONTAL_PADDING;
+  const verticalPadding = SCORE_VERTICAL_PADDING;
+  const bottomPadding = SCORE_BOTTOM_PADDING;
+  const spacingBetweenMeasures = Math.max(columns - 1, 0) * measureSpacing;
+  const availableWidth = getInnerWidth(container);
+  const minimumWidthForMeasures = columns * SCORE_MIN_STAVE_WIDTH;
+  const widthForStaves = Math.max(availableWidth - spacingBetweenMeasures, minimumWidthForMeasures);
+  const staveWidth = clamp(
+    Math.floor(widthForStaves / columns),
+    SCORE_MIN_STAVE_WIDTH,
+    SCORE_MAX_STAVE_WIDTH
+  );
+  const width = columns * staveWidth + spacingBetweenMeasures + horizontalPadding * 2;
   const height =
     rows * staveHeight + Math.max(rows - 1, 0) * rowSpacing + verticalPadding + bottomPadding;
 
@@ -627,7 +808,29 @@ function renderScore(noteEntries, accentIndices = []) {
     const y = verticalPadding + row * (staveHeight + rowSpacing);
     const stave = new VF.Stave(x, y, staveWidth);
     if (index === 0) {
-      stave.addClef("treble").addTimeSignature("4/4");
+      stave.addClef("treble");
+      let addedTimeSignature = false;
+      if (VF.TimeSignature) {
+        try {
+          const timeSignature = new VF.TimeSignature("4/4");
+          if (typeof timeSignature.setXShift === "function") {
+            timeSignature.setXShift(-6);
+          }
+          if (typeof stave.addModifier === "function") {
+            if (VF.StaveModifier?.Position !== undefined) {
+              stave.addModifier(timeSignature, VF.StaveModifier.Position.BEGIN);
+            } else {
+              stave.addModifier(timeSignature);
+            }
+            addedTimeSignature = true;
+          }
+        } catch (_) {
+          addedTimeSignature = false;
+        }
+      }
+      if (!addedTimeSignature) {
+        stave.addTimeSignature("4/4");
+      }
     }
     if (column > 0) {
       stave.setBegBarType(VF.Barline.type.NONE);
@@ -699,10 +902,14 @@ function renderMatrix() {
     elements.matrix.appendChild(empty);
     return;
   }
-  for (let i = 0; i < state.patternGroups.length; i += 4) {
+  const groupsPerRow = Math.max(1, calculateGroupsPerRow());
+  const totalGroups = state.patternGroups.length;
+  for (let i = 0; i < totalGroups; i += groupsPerRow) {
     const rowEl = document.createElement("div");
     rowEl.className = "matrix-row";
-    const rowEnd = Math.min(i + 4, state.patternGroups.length);
+    const rowEnd = Math.min(i + groupsPerRow, totalGroups);
+    const columnsInRow = rowEnd - i;
+    rowEl.style.setProperty("--matrix-columns", String(columnsInRow));
     for (let j = i; j < rowEnd; j++) {
       const pattern = state.patternGroups[j];
       const groupEl = document.createElement("div");
@@ -769,6 +976,10 @@ function renderMatrix() {
       label.className = "matrix-pattern-id";
       label.textContent = pattern.id;
       groupEl.appendChild(label);
+
+      if (j === rowEnd - 1) {
+        groupEl.classList.add("matrix-group--last-in-row");
+      }
 
       rowEl.appendChild(groupEl);
     }
@@ -1807,6 +2018,13 @@ function attachEvents() {
     elements.refreshMidiOutputs.addEventListener("click", () => refreshMidiOutputs(true));
   }
   document.addEventListener("keydown", handleGlobalKeydown);
+  if (elements.panelResizer) {
+    elements.panelResizer.addEventListener("pointerdown", handlePanelResizePointerDown);
+    elements.panelResizer.addEventListener("dblclick", handlePanelResizeDoubleClick);
+  }
+  if (typeof window !== "undefined") {
+    window.addEventListener("resize", handleWindowResize);
+  }
 }
 
 renderCatalog();
