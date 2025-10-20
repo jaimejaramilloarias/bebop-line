@@ -20,20 +20,6 @@
     </header>
 
     <main>
-      <section class="controls" aria-labelledby="controls-title">
-        <div class="section-title" id="controls-title">Generador de patrones</div>
-        <p class="controls-helper" aria-live="polite">
-          Captura acordes con MIDI Learn y la app generará la línea automáticamente.
-        </p>
-      </section>
-
-      <section class="catalog" aria-labelledby="catalog-title">
-        <div class="section-title" id="catalog-title">Catálogo de patrones</div>
-        <div class="catalog-collections" role="list" aria-label="Patrones disponibles">
-          <!-- Patrones insertados dinámicamente -->
-        </div>
-      </section>
-
       <section class="visualizations" aria-labelledby="visualizations-title">
         <div class="section-title" id="visualizations-title">Distribución de alturas</div>
         <div
@@ -64,6 +50,26 @@
           <label for="swing" class="tempo-label" title="Aplicar swing solo a la reproducción">Swing</label>
           <input id="swing" type="range" min="0" max="100" value="0" />
           <span id="swing-value" aria-live="polite">0%</span>
+        </div>
+        <div class="control-group transpose-group" role="group" aria-labelledby="transpose-label">
+          <span class="transpose-label" id="transpose-label">Transposición</span>
+          <div class="transpose-buttons" role="group" aria-labelledby="transpose-label">
+            <button type="button" id="transpose-down-octave" title="Bajar una octava">−8va</button>
+            <button type="button" id="transpose-down-semitone" title="Bajar un semitono">−1</button>
+            <button type="button" id="transpose-up-semitone" title="Subir un semitono">+1</button>
+            <button type="button" id="transpose-up-octave" title="Subir una octava">+8va</button>
+          </div>
+          <span id="transpose-value" class="transpose-value" aria-live="polite"></span>
+          <button
+            type="button"
+            id="transpose-reset"
+            class="transpose-reset"
+            title="Restablecer transposición"
+          >
+            Reset
+          </button>
+        </div>
+        <div class="control-group playback">
           <button
             id="play-toggle"
             class="primary"
