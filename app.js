@@ -79,9 +79,7 @@ const elements = {
   catalog: document.querySelector(".catalog-collections"),
   matrix: document.querySelector(".matrix"),
   tempo: document.getElementById("tempo"),
-  tempoValue: document.getElementById("tempo-value"),
   swing: document.getElementById("swing"),
-  swingValue: document.getElementById("swing-value"),
   transposeValue: document.getElementById("transpose-value"),
   transposeDownSemitone: document.getElementById("transpose-down-semitone"),
   transposeUpSemitone: document.getElementById("transpose-up-semitone"),
@@ -103,14 +101,8 @@ const elements = {
 if (elements.tempo) {
   elements.tempo.value = String(DEFAULT_BPM);
 }
-if (elements.tempoValue) {
-  elements.tempoValue.textContent = `${DEFAULT_BPM} BPM`;
-}
 if (elements.swing) {
   elements.swing.value = String(DEFAULT_SWING_PERCENT);
-}
-if (elements.swingValue) {
-  elements.swingValue.textContent = `${DEFAULT_SWING_PERCENT}%`;
 }
 
 function setStatus(message) {
@@ -121,16 +113,13 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-function updateSwingDisplay(percent) {
-  if (elements.swingValue) {
-    elements.swingValue.textContent = `${Math.round(percent)}%`;
-  }
-}
-
-function setSwingPercent(percent) {
+function setSwingPercent(percent, { updateInput = false } = {}) {
   const normalized = clamp(Number(percent) || 0, 0, 100);
   state.swingPercent = normalized;
-  updateSwingDisplay(normalized);
+  if (updateInput && elements.swing) {
+    elements.swing.value = String(normalized);
+  }
+  return normalized;
 }
 
 function describeTranspose(value) {
@@ -387,17 +376,29 @@ elements.themeToggle.addEventListener("click", toggleTheme);
 restoreTheme();
 
 if (elements.tempo) {
-  elements.tempo.addEventListener("input", (event) => {
-    const bpm = Number(event.target.value);
-    elements.tempoValue.textContent = `${bpm} BPM`;
-  });
+  const enforceTempoBounds = () => {
+    const min = Number(elements.tempo.min) || 40;
+    const max = Number(elements.tempo.max) || 320;
+    const sanitized = clamp(Math.round(Number(elements.tempo.value) || DEFAULT_BPM), min, max);
+    elements.tempo.value = String(sanitized);
+    return sanitized;
+  };
+  elements.tempo.addEventListener("change", enforceTempoBounds);
+  elements.tempo.addEventListener("blur", enforceTempoBounds);
+  enforceTempoBounds();
 }
 
 if (elements.swing) {
   elements.swing.addEventListener("input", (event) => {
     setSwingPercent(event.target.value);
   });
-  setSwingPercent(elements.swing.value);
+  const enforceSwingBounds = () => {
+    const normalized = setSwingPercent(elements.swing.value);
+    elements.swing.value = String(normalized);
+  };
+  elements.swing.addEventListener("change", enforceSwingBounds);
+  elements.swing.addEventListener("blur", enforceSwingBounds);
+  setSwingPercent(elements.swing.value, { updateInput: true });
 }
 
 updateTransposeDisplay();
