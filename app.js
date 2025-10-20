@@ -47,6 +47,7 @@ const VELOCITY_BY_VOICE = {
   4: 127
 };
 const DEFAULT_SWING_PERCENT = 0;
+const TRANSPOSE_LIMIT = 36;
 
 const state = {
   patternGroups: [],
@@ -70,7 +71,8 @@ const state = {
   replacementIndex: null,
   lastCapturedChordIndex: null,
   pendingReplacementDisarm: false,
-  swingPercent: DEFAULT_SWING_PERCENT
+  swingPercent: DEFAULT_SWING_PERCENT,
+  transposeSemitones: 0
 };
 
 const elements = {
@@ -80,6 +82,12 @@ const elements = {
   tempoValue: document.getElementById("tempo-value"),
   swing: document.getElementById("swing"),
   swingValue: document.getElementById("swing-value"),
+  transposeValue: document.getElementById("transpose-value"),
+  transposeDownSemitone: document.getElementById("transpose-down-semitone"),
+  transposeUpSemitone: document.getElementById("transpose-up-semitone"),
+  transposeDownOctave: document.getElementById("transpose-down-octave"),
+  transposeUpOctave: document.getElementById("transpose-up-octave"),
+  transposeReset: document.getElementById("transpose-reset"),
   playToggle: document.getElementById("play-toggle"),
   newLine: document.getElementById("regenerate-line"),
   exportMidi: document.getElementById("export-midi"),
@@ -123,6 +131,53 @@ function setSwingPercent(percent) {
   const normalized = clamp(Number(percent) || 0, 0, 100);
   state.swingPercent = normalized;
   updateSwingDisplay(normalized);
+}
+
+function describeTranspose(value) {
+  if (!value) {
+    return "Sin transposición";
+  }
+  const sign = value > 0 ? "+" : "−";
+  const abs = Math.abs(value);
+  const octaves = Math.floor(abs / 12);
+  const semitones = abs % 12;
+  const parts = [];
+  if (octaves) {
+    parts.push(`${octaves} ${octaves === 1 ? "octava" : "octavas"}`);
+  }
+  if (semitones) {
+    parts.push(`${semitones} ${semitones === 1 ? "semitono" : "semitonos"}`);
+  }
+  const descriptor = parts.join(" + ") || `${abs} ${abs === 1 ? "semitono" : "semitonos"}`;
+  return `${sign}${descriptor}`;
+}
+
+function updateTransposeDisplay() {
+  if (!elements.transposeValue) return;
+  elements.transposeValue.textContent = describeTranspose(state.transposeSemitones);
+}
+
+function setTransposeSemitones(value, { announce = true } = {}) {
+  const normalized = clamp(Math.round(value) || 0, -TRANSPOSE_LIMIT, TRANSPOSE_LIMIT);
+  if (normalized === state.transposeSemitones) {
+    updateTransposeDisplay();
+    return state.transposeSemitones;
+  }
+  stopPlayback(false);
+  state.transposeSemitones = normalized;
+  updateTransposeDisplay();
+  rebuildLineNotes();
+  if (announce) {
+    const message = normalized
+      ? `Transposición ajustada a ${describeTranspose(normalized)}.`
+      : "Transposición restablecida.";
+    setStatus(message);
+  }
+  return normalized;
+}
+
+function changeTranspose(delta) {
+  setTransposeSemitones(state.transposeSemitones + delta);
 }
 
 function setPlaybackState(playing) {
@@ -345,6 +400,8 @@ if (elements.swing) {
   setSwingPercent(elements.swing.value);
 }
 
+updateTransposeDisplay();
+
 function randomChoice(list) {
   return list[Math.floor(Math.random() * list.length)];
 }
@@ -400,7 +457,8 @@ function rebuildLineNotes() {
     const sortedChord = getSortedChord(chord);
     pattern.values.forEach((voice) => {
       const note = getNoteFromSortedChordVoice(voice, sortedChord);
-      noteEntries.push({ note, voice });
+      const transposed = clamp(note + state.transposeSemitones, 0, 127);
+      noteEntries.push({ note: transposed, voice });
     });
   }
   state.lineNotes = noteEntries.map((entry) => entry.note);
@@ -689,6 +747,7 @@ function createCatalogButton(pattern) {
 }
 
 function renderCatalogSection(title, patterns, gridExtraClass = "") {
+  if (!elements.catalog) return;
   const section = document.createElement("div");
   section.className = "catalog-section";
   section.setAttribute("role", "group");
@@ -711,6 +770,7 @@ function renderCatalogSection(title, patterns, gridExtraClass = "") {
 }
 
 function renderCatalog() {
+  if (!elements.catalog) return;
   elements.catalog.innerHTML = "";
   renderCatalogSection("Patrones de 4 alturas", FOUR_NOTE_PATTERNS, "catalog-grid--four");
   renderCatalogSection("Patrones de 3 alturas", THREE_NOTE_PATTERNS, "catalog-grid--three");
@@ -1375,6 +1435,21 @@ function ensureValidPatternsAfterCapture() {
 }
 
 function attachEvents() {
+  if (elements.transposeDownSemitone) {
+    elements.transposeDownSemitone.addEventListener("click", () => changeTranspose(-1));
+  }
+  if (elements.transposeUpSemitone) {
+    elements.transposeUpSemitone.addEventListener("click", () => changeTranspose(1));
+  }
+  if (elements.transposeDownOctave) {
+    elements.transposeDownOctave.addEventListener("click", () => changeTranspose(-12));
+  }
+  if (elements.transposeUpOctave) {
+    elements.transposeUpOctave.addEventListener("click", () => changeTranspose(12));
+  }
+  if (elements.transposeReset) {
+    elements.transposeReset.addEventListener("click", () => setTransposeSemitones(0));
+  }
   if (elements.playToggle) {
     elements.playToggle.addEventListener("click", handlePlaybackToggle);
   }
