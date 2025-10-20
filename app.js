@@ -40,6 +40,13 @@ const NOTES_PER_MEASURE = 8;
 const TICKS_PER_QUARTER = 480;
 const TICKS_PER_EIGHTH = TICKS_PER_QUARTER / 2;
 const EMPTY_MIDI_LINE = { events: [], measures: 0, totalTicks: 0 };
+const VELOCITY_BY_VOICE = {
+  1: 60,
+  2: 90,
+  3: 110,
+  4: 127
+};
+const DEFAULT_SWING_PERCENT = 0;
 
 const state = {
   patternGroups: [],
@@ -62,7 +69,8 @@ const state = {
   isPlaying: false,
   replacementIndex: null,
   lastCapturedChordIndex: null,
-  pendingReplacementDisarm: false
+  pendingReplacementDisarm: false,
+  swingPercent: DEFAULT_SWING_PERCENT
 };
 
 const elements = {
@@ -70,6 +78,8 @@ const elements = {
   matrix: document.querySelector(".matrix"),
   tempo: document.getElementById("tempo"),
   tempoValue: document.getElementById("tempo-value"),
+  swing: document.getElementById("swing"),
+  swingValue: document.getElementById("swing-value"),
   playToggle: document.getElementById("play-toggle"),
   newLine: document.getElementById("regenerate-line"),
   exportMidi: document.getElementById("export-midi"),
@@ -88,9 +98,31 @@ if (elements.tempo) {
 if (elements.tempoValue) {
   elements.tempoValue.textContent = `${DEFAULT_BPM} BPM`;
 }
+if (elements.swing) {
+  elements.swing.value = String(DEFAULT_SWING_PERCENT);
+}
+if (elements.swingValue) {
+  elements.swingValue.textContent = `${DEFAULT_SWING_PERCENT}%`;
+}
 
 function setStatus(message) {
   elements.status.textContent = message;
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function updateSwingDisplay(percent) {
+  if (elements.swingValue) {
+    elements.swingValue.textContent = `${Math.round(percent)}%`;
+  }
+}
+
+function setSwingPercent(percent) {
+  const normalized = clamp(Number(percent) || 0, 0, 100);
+  state.swingPercent = normalized;
+  updateSwingDisplay(normalized);
 }
 
 function setPlaybackState(playing) {
@@ -238,16 +270,18 @@ function sendAllNotesOff() {
 }
 
 function scheduleMidiPlayback(midiOutput, midiLine, bpm, onComplete) {
-  const msPerTick = ((60 / bpm) / TICKS_PER_QUARTER) * 1000;
   state.activePlaybackNotes.clear();
   state.playingMidiOutputId = midiOutput.id;
 
-  midiLine.events.forEach((event) => {
-    const startDelay = Math.max(0, Math.round(event.startTicks * msPerTick));
-    const durationDelay = Math.max(0, Math.round(event.durationTicks * msPerTick));
+  let maxEndMs = 0;
+  midiLine.events.forEach((event, index) => {
+    const { startSeconds, durationSeconds } = getSwingTiming(index, bpm, state.swingPercent);
+    const startDelay = Math.max(0, Math.round(startSeconds * 1000));
+    const durationDelay = Math.max(0, Math.round(durationSeconds * 1000));
+    const velocity = clamp(Math.round(event.velocity) || 0, 0, 127);
 
     const noteOnTimeout = setTimeout(() => {
-      midiOutput.send([0x90, event.note, 100]);
+      midiOutput.send([0x90, event.note, velocity]);
       state.activePlaybackNotes.add(event.note);
     }, startDelay);
 
@@ -256,10 +290,11 @@ function scheduleMidiPlayback(midiOutput, midiLine, bpm, onComplete) {
       state.activePlaybackNotes.delete(event.note);
     }, startDelay + durationDelay);
 
+    maxEndMs = Math.max(maxEndMs, startDelay + durationDelay);
     state.scheduledTimeouts.push(noteOnTimeout, noteOffTimeout);
   });
 
-  const cleanupDelay = Math.max(0, Math.round(midiLine.totalTicks * msPerTick) + 20);
+  const cleanupDelay = Math.max(0, Math.round(maxEndMs) + 20);
   const cleanupTimeout = setTimeout(() => {
     state.activePlaybackNotes.clear();
     state.playingMidiOutputId = null;
@@ -301,6 +336,13 @@ if (elements.tempo) {
     const bpm = Number(event.target.value);
     elements.tempoValue.textContent = `${bpm} BPM`;
   });
+}
+
+if (elements.swing) {
+  elements.swing.addEventListener("input", (event) => {
+    setSwingPercent(event.target.value);
+  });
+  setSwingPercent(elements.swing.value);
 }
 
 function randomChoice(list) {
@@ -350,18 +392,19 @@ function updatePatternGroups(groups) {
 }
 
 function rebuildLineNotes() {
-  const notes = [];
+  const noteEntries = [];
   const totalGroups = state.patternGroups.length;
   for (let i = 0; i < totalGroups; i++) {
     const pattern = state.patternGroups[i];
     const chord = state.chords[i] || DEFAULT_CHORD;
     const sortedChord = getSortedChord(chord);
     pattern.values.forEach((voice) => {
-      notes.push(getNoteFromSortedChordVoice(voice, sortedChord));
+      const note = getNoteFromSortedChordVoice(voice, sortedChord);
+      noteEntries.push({ note, voice });
     });
   }
-  state.lineNotes = notes;
-  state.midiLine = convertLineToMidi(notes);
+  state.lineNotes = noteEntries.map((entry) => entry.note);
+  state.midiLine = convertLineToMidi(noteEntries);
 }
 
 function getSortedChord(chord) {
@@ -378,15 +421,41 @@ function getNoteFromSortedChordVoice(voice, sortedChord) {
   return sortedChord[index];
 }
 
-function convertLineToMidi(notes) {
-  const events = notes.map((note, index) => ({
-    note,
+function getVelocityForVoice(voice) {
+  const key = clamp(Math.round(voice) || 4, 1, 4);
+  return VELOCITY_BY_VOICE[key] ?? VELOCITY_BY_VOICE[4];
+}
+
+function convertLineToMidi(noteEntries) {
+  const events = noteEntries.map((entry, index) => ({
+    note: entry.note,
     startTicks: index * TICKS_PER_EIGHTH,
-    durationTicks: TICKS_PER_EIGHTH
+    durationTicks: TICKS_PER_EIGHTH,
+    velocity: getVelocityForVoice(entry.voice)
   }));
-  const measures = Math.ceil(notes.length / NOTES_PER_MEASURE);
+  const measures = Math.ceil(noteEntries.length / NOTES_PER_MEASURE);
   const totalTicks = events.length ? events[events.length - 1].startTicks + TICKS_PER_EIGHTH : 0;
   return { events, measures, totalTicks };
+}
+
+function getSwingRatios(percent) {
+  const swing = clamp(Number(percent) || 0, 0, 100) / 100;
+  const first = 0.5 + 0.25 * swing;
+  const second = 0.5 - 0.25 * swing;
+  return { first, second };
+}
+
+function getSwingTiming(index, bpm, percent) {
+  const safeBpm = Math.max(1, Number(bpm) || DEFAULT_BPM);
+  const quarterDuration = 60 / safeBpm;
+  const { first, second } = getSwingRatios(percent);
+  const pairIndex = Math.floor(index / 2);
+  const isFirst = index % 2 === 0;
+  const firstDuration = quarterDuration * first;
+  const secondDuration = quarterDuration * second;
+  const startSeconds = pairIndex * quarterDuration + (isFirst ? 0 : firstDuration);
+  const durationSeconds = isFirst ? firstDuration : secondDuration;
+  return { startSeconds, durationSeconds };
 }
 
 function renderMatrix() {
@@ -528,7 +597,8 @@ function createMidiFile(midiLine, bpm) {
   ];
 
   midiLine.events.forEach((event) => {
-    events.push({ tick: event.startTicks, order: 0, bytes: [0x90, event.note, 100] });
+    const velocity = clamp(Math.round(event.velocity) || 0, 0, 127);
+    events.push({ tick: event.startTicks, order: 0, bytes: [0x90, event.note, velocity] });
     events.push({ tick: event.startTicks + event.durationTicks, order: 1, bytes: [0x80, event.note, 0] });
   });
 
@@ -801,23 +871,28 @@ function playLine() {
 
   const audioCtx = ensureAudioContext();
   const now = audioCtx.currentTime;
-  const secondsPerTick = (60 / bpm) / TICKS_PER_QUARTER;
-  midiLine.events.forEach((event) => {
-    const start = now + event.startTicks * secondsPerTick;
-    const duration = event.durationTicks * secondsPerTick;
+  let maxEndSeconds = 0;
+  midiLine.events.forEach((event, index) => {
+    const { startSeconds, durationSeconds } = getSwingTiming(index, bpm, state.swingPercent);
+    const start = now + startSeconds;
+    const duration = durationSeconds;
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
     osc.type = "sine";
     osc.frequency.value = midiToFrequency(event.note);
+    const velocity = clamp(Math.round(event.velocity) || 0, 0, 127);
+    const peakGain = 0.7 * (velocity / 127);
+    const attackEnd = start + Math.min(0.03, duration * 0.3);
     gain.gain.setValueAtTime(0, start);
-    gain.gain.linearRampToValueAtTime(0.7, start + 0.01);
+    gain.gain.linearRampToValueAtTime(peakGain, attackEnd);
     gain.gain.linearRampToValueAtTime(0.0, start + duration * 0.9);
     osc.connect(gain).connect(audioCtx.destination);
     osc.start(start);
     osc.stop(start + duration);
     state.scheduledNodes.push(osc);
+    maxEndSeconds = Math.max(maxEndSeconds, startSeconds + duration);
   });
-  const totalDurationSeconds = midiLine.totalTicks * secondsPerTick;
+  const totalDurationSeconds = maxEndSeconds;
   const finishTimeout = setTimeout(() => {
     setPlaybackState(false);
     setStatus("Reproducción finalizada.");
