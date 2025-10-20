@@ -499,6 +499,9 @@ function convertLineToMidi(noteEntries) {
     durationTicks: TICKS_PER_EIGHTH,
     velocity: getVelocityForVoice(entry.voice)
   }));
+  if (events.length > 0) {
+    events[events.length - 1].velocity = 127;
+  }
   const measures = Math.ceil(noteEntries.length / NOTES_PER_MEASURE);
   const totalTicks = events.length ? events[events.length - 1].startTicks + TICKS_PER_EIGHTH : 0;
   return { events, measures, totalTicks };
