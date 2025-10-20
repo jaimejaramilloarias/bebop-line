@@ -1,3 +1,11 @@
+import {
+  CAPTURE_EXTENSION_WINDOW_MS,
+  buildChordFromUniqueNotes,
+  collectUniqueActiveNotes,
+  extendChordWithNote,
+  normalizeVoiceCount
+} from "./midi-capture-core.js";
+
 const FOUR_NOTE_PATTERN_IDS = [
   "1234",
   "4321",
@@ -44,6 +52,7 @@ const state = {
   captureQueue: [],
   awaitingRelease: false,
   activeNotes: new Set(),
+  lastCaptureTime: 0,
   scheduledNodes: [],
   scheduledTimeouts: [],
   activePlaybackNotes: new Set(),
@@ -279,13 +288,6 @@ function randomChoice(list) {
 function findPatternById(id) {
   if (!id) return null;
   return PATTERN_LOOKUP.get(id) || null;
-}
-
-function normalizeVoiceCount(value) {
-  if (Number.isFinite(value)) {
-    return Math.max(1, Math.min(4, Math.round(value)));
-  }
-  return null;
 }
 
 function getChordVoiceCount(chord) {
@@ -643,6 +645,7 @@ function clearChords() {
   renderChords();
   updatePatternGroups([]);
   state.midiLine = EMPTY_MIDI_LINE;
+  state.lastCaptureTime = 0;
   setStatus("Acordes borrados.");
 }
 
@@ -725,46 +728,76 @@ function onNoteOn(note) {
   const now = performance.now();
   state.captureQueue.push({ note, time: now });
   state.activeNotes.add(note);
-  if (state.awaitingRelease) return;
-
-  const activeNotes = state.activeNotes;
-  state.captureQueue = state.captureQueue.filter((item) => activeNotes.has(item.note));
-
-  const uniqueMap = new Map();
-  for (let i = state.captureQueue.length - 1; i >= 0; i--) {
-    const item = state.captureQueue[i];
-    if (!activeNotes.has(item.note) || uniqueMap.has(item.note)) {
-      continue;
+  if (state.awaitingRelease) {
+    if (extendCapturedChordIfNeeded(note, now)) {
+      state.captureQueue = [];
     }
-    uniqueMap.set(item.note, item);
+    return;
   }
 
-  const uniqueNotes = Array.from(uniqueMap.values()).sort((a, b) => a.time - b.time);
-  if (uniqueNotes.length >= 3) {
-    const capturedItems = uniqueNotes.slice(-4);
-    const capturedNotes = capturedItems.map((item) => item.note);
-    const voiceCount = Math.min(uniqueNotes.length, 4);
-    const chord = capturedNotes.slice();
-    chord.voiceCount = voiceCount;
-    state.chords.push(chord);
-    renderChords();
-    const adjusted = ensureValidPatternsAfterCapture();
-    if (!adjusted) {
-      rebuildLineNotes();
-    }
-    const originalLength = uniqueNotes.length;
-    const baseMessage =
-      originalLength === 3
-        ? `Acorde capturado (3 alturas): ${chord.map(noteNumberToName).join(" ")}`
-        : `Acorde capturado: ${chord.map(noteNumberToName).join(" ")}`;
-    setStatus(
-      adjusted
-        ? `${baseMessage}. Patrones ajustados para evitar notas consecutivas repetidas.`
-        : baseMessage
-    );
-    state.awaitingRelease = true;
-    state.captureQueue = [];
+  const { uniqueNotes, filteredQueue } = collectUniqueActiveNotes(
+    state.captureQueue,
+    state.activeNotes
+  );
+  state.captureQueue = filteredQueue;
+
+  const capture = buildChordFromUniqueNotes(uniqueNotes);
+  if (!capture) {
+    return;
   }
+
+  const { chord, voiceCount, captureTime } = capture;
+  state.chords.push(chord);
+  state.lastCaptureTime = captureTime;
+  renderChords();
+  const adjusted = ensureValidPatternsAfterCapture();
+  if (!adjusted) {
+    rebuildLineNotes();
+  }
+  const baseMessage =
+    voiceCount === 3
+      ? `Acorde capturado (3 alturas): ${chord.map(noteNumberToName).join(" ")}`
+      : `Acorde capturado: ${chord.map(noteNumberToName).join(" ")}`;
+  setStatus(
+    adjusted
+      ? `${baseMessage}. Patrones ajustados para evitar notas consecutivas repetidas.`
+      : baseMessage
+  );
+  state.awaitingRelease = true;
+  state.captureQueue = [];
+}
+
+function extendCapturedChordIfNeeded(note, time) {
+  const lastChord = state.chords[state.chords.length - 1];
+  if (!lastChord) {
+    return false;
+  }
+  const result = extendChordWithNote(lastChord, note, time, state.lastCaptureTime, {
+    extensionWindowMs: CAPTURE_EXTENSION_WINDOW_MS
+  });
+  if (!result.extended) {
+    return false;
+  }
+
+  state.chords[state.chords.length - 1] = result.chord;
+  state.lastCaptureTime = result.captureTime;
+  renderChords();
+  const adjusted = ensureValidPatternsAfterCapture();
+  if (!adjusted) {
+    rebuildLineNotes();
+  }
+  const baseMessage =
+    result.voiceCount === 3
+      ? `Acorde actualizado (3 alturas): ${result.chord.map(noteNumberToName).join(" ")}`
+      : `Acorde actualizado a ${result.voiceCount} notas: ${result.chord
+          .map(noteNumberToName)
+          .join(" ")}`;
+  setStatus(
+    adjusted
+      ? `${baseMessage}. Patrones ajustados para evitar notas consecutivas repetidas.`
+      : baseMessage
+  );
+  return true;
 }
 
 function onNoteOff(note) {
@@ -791,6 +824,7 @@ async function toggleMidiLearn() {
     state.captureQueue = [];
     state.awaitingRelease = false;
     state.activeNotes.clear();
+    state.lastCaptureTime = 0;
 
     updateMidiInputListeners();
     updateMidiLearnButton();
