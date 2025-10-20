@@ -58,7 +58,11 @@ const state = {
   activePlaybackNotes: new Set(),
   playingMidiOutputId: null,
   selectedMidiOutputId: "",
-  audioCtx: null
+  audioCtx: null,
+  isPlaying: false,
+  replacementIndex: null,
+  lastCapturedChordIndex: null,
+  pendingReplacementDisarm: false
 };
 
 const elements = {
@@ -66,8 +70,7 @@ const elements = {
   matrix: document.querySelector(".matrix"),
   tempo: document.getElementById("tempo"),
   tempoValue: document.getElementById("tempo-value"),
-  play: document.getElementById("play-line"),
-  stop: document.getElementById("stop-line"),
+  playToggle: document.getElementById("play-toggle"),
   exportMidi: document.getElementById("export-midi"),
   midiLearn: document.getElementById("midi-learn"),
   clearChords: document.getElementById("clear-chords"),
@@ -87,6 +90,21 @@ if (elements.tempoValue) {
 
 function setStatus(message) {
   elements.status.textContent = message;
+}
+
+function setPlaybackState(playing) {
+  state.isPlaying = playing;
+  updatePlayToggleButton();
+}
+
+function updatePlayToggleButton() {
+  if (!elements.playToggle) return;
+  elements.playToggle.textContent = state.isPlaying ? "Detener" : "Reproducir";
+  elements.playToggle.setAttribute("aria-pressed", String(state.isPlaying));
+  elements.playToggle.classList.toggle("primary", !state.isPlaying);
+  elements.playToggle.title = state.isPlaying
+    ? "Detener reproducción"
+    : "Reproducir línea generada";
 }
 
 async function ensureMidiAccess() {
@@ -218,7 +236,7 @@ function sendAllNotesOff() {
   state.playingMidiOutputId = null;
 }
 
-function scheduleMidiPlayback(midiOutput, midiLine, bpm) {
+function scheduleMidiPlayback(midiOutput, midiLine, bpm, onComplete) {
   const msPerTick = ((60 / bpm) / TICKS_PER_QUARTER) * 1000;
   state.activePlaybackNotes.clear();
   state.playingMidiOutputId = midiOutput.id;
@@ -244,6 +262,9 @@ function scheduleMidiPlayback(midiOutput, midiLine, bpm) {
   const cleanupTimeout = setTimeout(() => {
     state.activePlaybackNotes.clear();
     state.playingMidiOutputId = null;
+    if (typeof onComplete === "function") {
+      onComplete();
+    }
   }, cleanupDelay);
   state.scheduledTimeouts.push(cleanupTimeout);
 }
@@ -633,15 +654,95 @@ function renderChords() {
     return;
   }
   state.chords.forEach((chord, index) => {
-    const pill = document.createElement("span");
+    const pill = document.createElement("div");
     pill.className = "chord-pill";
-    pill.textContent = `${index + 1}: ${chord.map(noteNumberToName).join(" ")}`;
+    if (state.midiArmed && state.replacementIndex === index) {
+      pill.classList.add("chord-pill--editing");
+    }
+
+    const mainButton = document.createElement("button");
+    mainButton.type = "button";
+    mainButton.className = "chord-pill__main";
+    mainButton.textContent = `${index + 1}: ${chord.map(noteNumberToName).join(" ")}`;
+    mainButton.title = "Reemplazar este acorde con una nueva captura";
+    mainButton.setAttribute("aria-label", `Reemplazar acorde ${index + 1}`);
+    mainButton.addEventListener("click", () => startChordReplacement(index));
+
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "chord-pill__remove";
+    removeButton.textContent = "×";
+    removeButton.title = "Eliminar este acorde";
+    removeButton.setAttribute("aria-label", `Eliminar acorde ${index + 1}`);
+    removeButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void removeChordAt(index);
+    });
+
+    pill.appendChild(mainButton);
+    pill.appendChild(removeButton);
     elements.chordsContainer.appendChild(pill);
   });
 }
 
+async function startChordReplacement(index) {
+  if (index < 0 || index >= state.chords.length) {
+    return;
+  }
+  await setMidiLearnState(true, { replacementIndex: index });
+}
+
+async function removeChordAt(index) {
+  if (index < 0 || index >= state.chords.length) {
+    return;
+  }
+
+  state.chords.splice(index, 1);
+  const groups = state.patternGroups.slice();
+  if (index < groups.length) {
+    groups.splice(index, 1);
+  }
+  updatePatternGroups(groups);
+
+  if (!state.chords.length) {
+    state.midiLine = EMPTY_MIDI_LINE;
+  } else {
+    const adjusted = ensureValidPatternsAfterCapture();
+    if (!adjusted) {
+      rebuildLineNotes();
+    }
+  }
+
+  let disarmReplacement = false;
+  if (state.replacementIndex !== null) {
+    if (index === state.replacementIndex) {
+      state.replacementIndex = null;
+      state.pendingReplacementDisarm = false;
+      disarmReplacement = true;
+    } else if (index < state.replacementIndex) {
+      state.replacementIndex -= 1;
+    }
+  }
+
+  state.lastCapturedChordIndex = null;
+
+  if (disarmReplacement && state.midiArmed) {
+    await setMidiLearnState(false, { skipGenerate: true });
+  } else {
+    renderChords();
+  }
+
+  const message = state.chords.length
+    ? `Acorde ${index + 1} eliminado.`
+    : "Acordes borrados. No quedan capturas.";
+  setStatus(message);
+}
+
 function clearChords() {
   state.chords = [];
+  state.replacementIndex = null;
+  state.pendingReplacementDisarm = false;
+  state.lastCapturedChordIndex = null;
   renderChords();
   updatePatternGroups([]);
   state.midiLine = EMPTY_MIDI_LINE;
@@ -671,6 +772,7 @@ function stopPlayback(userInitiated = true) {
   state.scheduledNodes = [];
   state.scheduledTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
   state.scheduledTimeouts = [];
+  setPlaybackState(false);
   sendAllNotesOff();
   if (userInitiated) {
     setStatus("Reproducción detenida.");
@@ -687,7 +789,11 @@ function playLine() {
   stopPlayback(false);
   const midiOutput = getSelectedMidiOutput();
   if (midiOutput) {
-    scheduleMidiPlayback(midiOutput, midiLine, bpm);
+    setPlaybackState(true);
+    scheduleMidiPlayback(midiOutput, midiLine, bpm, () => {
+      setPlaybackState(false);
+      setStatus("Reproducción finalizada.");
+    });
     setStatus(`Reproduciendo vía MIDI en ${midiOutput.name}.`);
     return;
   }
@@ -710,7 +816,69 @@ function playLine() {
     osc.stop(start + duration);
     state.scheduledNodes.push(osc);
   });
+  const totalDurationSeconds = midiLine.totalTicks * secondsPerTick;
+  const finishTimeout = setTimeout(() => {
+    setPlaybackState(false);
+    setStatus("Reproducción finalizada.");
+  }, Math.max(0, Math.round(totalDurationSeconds * 1000)) + 20);
+  state.scheduledTimeouts.push(finishTimeout);
+  setPlaybackState(true);
   setStatus("Reproduciendo línea.");
+}
+
+function handlePlaybackToggle() {
+  if (state.isPlaying) {
+    stopPlayback(true);
+  } else {
+    playLine();
+  }
+}
+
+function shouldIgnoreSpaceToggleTarget(target) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  if (target.isContentEditable) {
+    return true;
+  }
+  const tagName = target.tagName;
+  if (["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(tagName)) {
+    return true;
+  }
+  const role = target.getAttribute("role");
+  const interactiveRoles = new Set([
+    "button",
+    "checkbox",
+    "link",
+    "menuitem",
+    "menuitemcheckbox",
+    "menuitemradio",
+    "option",
+    "radio",
+    "slider",
+    "switch",
+    "tab",
+    "textbox",
+    "treeitem"
+  ]);
+  if (role && interactiveRoles.has(role)) {
+    return true;
+  }
+  return false;
+}
+
+function handleGlobalKeydown(event) {
+  if (event.code !== "Space" && event.key !== " ") {
+    return;
+  }
+  if (event.altKey || event.ctrlKey || event.metaKey || event.repeat) {
+    return;
+  }
+  if (shouldIgnoreSpaceToggleTarget(event.target)) {
+    return;
+  }
+  event.preventDefault();
+  handlePlaybackToggle();
 }
 
 function handleMidiMessage(event) {
@@ -747,17 +915,29 @@ function onNoteOn(note) {
   }
 
   const { chord, voiceCount, captureTime } = capture;
-  state.chords.push(chord);
+  let targetIndex = null;
+  if (state.replacementIndex !== null && state.replacementIndex >= 0 && state.replacementIndex < state.chords.length) {
+    targetIndex = state.replacementIndex;
+    state.chords[targetIndex] = chord;
+  } else {
+    state.chords.push(chord);
+    targetIndex = state.chords.length - 1;
+  }
+  state.lastCapturedChordIndex = targetIndex;
   state.lastCaptureTime = captureTime;
   renderChords();
   const adjusted = ensureValidPatternsAfterCapture();
   if (!adjusted) {
     rebuildLineNotes();
   }
+  const prefix =
+    state.replacementIndex !== null && state.replacementIndex === targetIndex
+      ? "Acorde reemplazado"
+      : "Acorde capturado";
   const baseMessage =
     voiceCount === 3
-      ? `Acorde capturado (3 alturas): ${chord.map(noteNumberToName).join(" ")}`
-      : `Acorde capturado: ${chord.map(noteNumberToName).join(" ")}`;
+      ? `${prefix} (3 alturas): ${chord.map(noteNumberToName).join(" ")}`
+      : `${prefix}: ${chord.map(noteNumberToName).join(" ")}`;
   setStatus(
     adjusted
       ? `${baseMessage}. Patrones ajustados para evitar notas consecutivas repetidas.`
@@ -765,10 +945,17 @@ function onNoteOn(note) {
   );
   state.awaitingRelease = true;
   state.captureQueue = [];
+  if (state.replacementIndex !== null) {
+    state.pendingReplacementDisarm = true;
+  }
 }
 
 function extendCapturedChordIfNeeded(note, time) {
-  const lastChord = state.chords[state.chords.length - 1];
+  const lastIndex = state.lastCapturedChordIndex;
+  if (lastIndex === null || lastIndex < 0 || lastIndex >= state.chords.length) {
+    return false;
+  }
+  const lastChord = state.chords[lastIndex];
   if (!lastChord) {
     return false;
   }
@@ -779,17 +966,18 @@ function extendCapturedChordIfNeeded(note, time) {
     return false;
   }
 
-  state.chords[state.chords.length - 1] = result.chord;
+  state.chords[lastIndex] = result.chord;
   state.lastCaptureTime = result.captureTime;
   renderChords();
   const adjusted = ensureValidPatternsAfterCapture();
   if (!adjusted) {
     rebuildLineNotes();
   }
+  const prefix = state.replacementIndex !== null ? "Acorde reemplazado" : "Acorde actualizado";
   const baseMessage =
     result.voiceCount === 3
-      ? `Acorde actualizado (3 alturas): ${result.chord.map(noteNumberToName).join(" ")}`
-      : `Acorde actualizado a ${result.voiceCount} notas: ${result.chord
+      ? `${prefix} (3 alturas): ${result.chord.map(noteNumberToName).join(" ")}`
+      : `${prefix} a ${result.voiceCount} notas: ${result.chord
           .map(noteNumberToName)
           .join(" ")}`;
   setStatus(
@@ -800,16 +988,20 @@ function extendCapturedChordIfNeeded(note, time) {
   return true;
 }
 
-function onNoteOff(note) {
+async function onNoteOff(note) {
   if (!state.midiArmed) return;
   state.activeNotes.delete(note);
   state.captureQueue = state.captureQueue.filter((item) => item.note !== note);
   if (state.awaitingRelease && state.activeNotes.size === 0) {
     state.awaitingRelease = false;
+    if (state.pendingReplacementDisarm && state.replacementIndex !== null) {
+      state.pendingReplacementDisarm = false;
+      await setMidiLearnState(false, { skipGenerate: true });
+    }
   }
 }
 
-async function toggleMidiLearn() {
+async function setMidiLearnState(armed, { replacementIndex = null, skipGenerate = false } = {}) {
   if (elements.midiLearn) {
     elements.midiLearn.disabled = true;
   }
@@ -817,14 +1009,27 @@ async function toggleMidiLearn() {
   try {
     const access = await ensureMidiAccess();
     if (!access) {
-      return;
+      state.midiArmed = false;
+      state.replacementIndex = null;
+      state.lastCapturedChordIndex = null;
+      state.pendingReplacementDisarm = false;
+      state.captureQueue = [];
+      state.awaitingRelease = false;
+      state.activeNotes.clear();
+      updateMidiInputListeners();
+      updateMidiLearnButton();
+      renderChords();
+      return false;
     }
 
-    state.midiArmed = !state.midiArmed;
+    state.midiArmed = armed;
     state.captureQueue = [];
     state.awaitingRelease = false;
     state.activeNotes.clear();
     state.lastCaptureTime = 0;
+    state.lastCapturedChordIndex = null;
+    state.replacementIndex = armed ? replacementIndex : null;
+    state.pendingReplacementDisarm = false;
 
     updateMidiInputListeners();
     updateMidiLearnButton();
@@ -832,30 +1037,49 @@ async function toggleMidiLearn() {
 
     if (state.midiArmed) {
       const hasInputs = access.inputs.size > 0;
-      setStatus(
-        hasInputs
-          ? "MIDI Learn encendido. Captura acordes de 4 notas o de 3 alturas."
-          : "MIDI Learn encendido. No se detectan entradas MIDI."
-      );
-    } else {
-      const result = generateLineFromCapturedChords();
-      if (result.success) {
+      if (state.replacementIndex !== null) {
+        const chordNumber = state.replacementIndex + 1;
         setStatus(
-          `MIDI Learn apagado. Línea generada automáticamente para ${state.chords.length} acordes.`
+          hasInputs
+            ? `MIDI Learn encendido para reemplazar el acorde ${chordNumber}. Toca 3 o 4 notas simultáneas.`
+            : `MIDI Learn encendido para reemplazar el acorde ${chordNumber}, pero no se detectan entradas MIDI.`
         );
-      } else if (result.reason === "empty") {
-        setStatus("MIDI Learn apagado. Captura acordes para generar la línea.");
       } else {
         setStatus(
-          "MIDI Learn apagado. No fue posible generar una línea con los acordes capturados."
+          hasInputs
+            ? "MIDI Learn encendido. Captura acordes de 4 notas o de 3 alturas."
+            : "MIDI Learn encendido. No se detectan entradas MIDI."
         );
       }
+    } else {
+      state.replacementIndex = null;
+      if (!skipGenerate) {
+        const result = generateLineFromCapturedChords();
+        if (result.success) {
+          setStatus(
+            `MIDI Learn apagado. Línea generada automáticamente para ${state.chords.length} acordes.`
+          );
+        } else if (result.reason === "empty") {
+          setStatus("MIDI Learn apagado. Captura acordes para generar la línea.");
+        } else {
+          setStatus(
+            "MIDI Learn apagado. No fue posible generar una línea con los acordes capturados."
+          );
+        }
+      }
     }
+
+    renderChords();
+    return true;
   } finally {
     if (elements.midiLearn) {
       elements.midiLearn.disabled = false;
     }
   }
+}
+
+async function toggleMidiLearn() {
+  await setMidiLearnState(!state.midiArmed);
 }
 
 function isIntervalWithinMajorSeventh(noteA, noteB) {
@@ -1057,8 +1281,9 @@ function ensureValidPatternsAfterCapture() {
 }
 
 function attachEvents() {
-  elements.play.addEventListener("click", playLine);
-  elements.stop.addEventListener("click", () => stopPlayback(true));
+  if (elements.playToggle) {
+    elements.playToggle.addEventListener("click", handlePlaybackToggle);
+  }
   if (elements.exportMidi) {
     elements.exportMidi.addEventListener("click", exportMidi);
   }
@@ -1070,11 +1295,13 @@ function attachEvents() {
   if (elements.refreshMidiOutputs) {
     elements.refreshMidiOutputs.addEventListener("click", () => refreshMidiOutputs(true));
   }
+  document.addEventListener("keydown", handleGlobalKeydown);
 }
 
 renderCatalog();
 renderMatrix();
 renderChords();
 updateMidiLearnButton();
+updatePlayToggleButton();
 attachEvents();
 refreshMidiOutputs();

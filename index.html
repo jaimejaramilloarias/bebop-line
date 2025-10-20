@@ -61,8 +61,14 @@
           <label for="tempo" class="tempo-label" title="Ajustar tempo en BPM">Tempo</label>
           <input id="tempo" type="range" min="40" max="320" value="240" />
           <span id="tempo-value" aria-live="polite">240 BPM</span>
-          <button id="play-line" class="primary" title="Reproducir línea generada">Reproducir</button>
-          <button id="stop-line" title="Detener reproducción">Detener</button>
+          <button
+            id="play-toggle"
+            class="primary"
+            title="Reproducir o detener la línea generada"
+            aria-pressed="false"
+          >
+            Reproducir
+          </button>
           <button id="export-midi" title="Exportar la línea como archivo MIDI">Exportar MIDI</button>
           <button id="clear-chords" title="Eliminar acordes capturados">Borrar acordes</button>
         </div>
