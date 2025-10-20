@@ -1105,14 +1105,46 @@ function parseManualNoteGroupsInput(input) {
 }
 
 function buildPatternDictionaryHtml() {
+  const renderPatternPreview = (pattern) => {
+    const cells = pattern.values
+      .map((voice, index) => {
+        const offset = Math.max(0, (4 - voice) * 12);
+        return `
+          <span class="pattern-preview-cell" aria-hidden="true">
+            <span
+              class="pattern-preview-dot"
+              style="margin-top: ${offset}px"
+              data-voice="${voice}"
+              data-step="${index + 1}"
+            ></span>
+          </span>
+        `;
+      })
+      .join("");
+
+    return `
+      <div class="pattern-preview" aria-hidden="true">
+        ${cells}
+      </div>
+    `;
+  };
+
   const renderSection = (title, patterns) => {
     const items = patterns
-      .map(
-        (pattern) =>
-          `<li><span class="pattern-id">${pattern.id}</span><span class="pattern-voices">${pattern.values.join(
-            " → "
-          )}</span></li>`
-      )
+      .map((pattern) => {
+        const preview = renderPatternPreview(pattern);
+        const voicesText = pattern.values.join(" → ");
+        const ariaLabel = `Patrón ${pattern.id}: ${voicesText}`;
+        return `
+          <li>
+            <div class="pattern-card" role="group" aria-label="${ariaLabel}">
+              <span class="pattern-id">${pattern.id}</span>
+              ${preview}
+              <span class="pattern-voices">${voicesText}</span>
+            </div>
+          </li>
+        `;
+      })
       .join("");
     return `
       <section class="dictionary-section">
@@ -1165,26 +1197,71 @@ function buildPatternDictionaryHtml() {
           margin: 0;
           padding: 0;
           display: grid;
-          gap: 0.4rem 1.25rem;
-          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+          gap: 1rem 1.5rem;
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
         }
         .pattern-list li {
           display: flex;
-          justify-content: space-between;
-          gap: 0.75rem;
-          padding: 0.4rem 0.6rem;
-          border-radius: 12px;
-          background: rgba(103, 63, 181, 0.12);
+          align-items: stretch;
           color: inherit;
+        }
+        .pattern-card {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 0.75rem;
+          padding: 1rem 1.1rem 1.25rem;
+          border-radius: 14px;
+          border: 1px solid rgba(103, 63, 181, 0.28);
+          background: rgba(103, 63, 181, 0.12);
           font-variant-numeric: tabular-nums;
+          text-align: center;
         }
         .pattern-id {
+          font-family: "Roboto Mono", monospace;
           font-weight: 600;
-          letter-spacing: 0.04em;
+          letter-spacing: 0.08em;
+          font-size: 0.8rem;
         }
         .pattern-voices {
           opacity: 0.75;
           font-size: 0.9rem;
+        }
+        .pattern-preview {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 0.35rem;
+          width: 100%;
+          max-width: 200px;
+        }
+        .pattern-preview-cell {
+          height: 60px;
+          border-radius: 999px;
+          border: 1px dashed rgba(103, 63, 181, 0.4);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: flex-start;
+          padding-top: 6px;
+        }
+        .pattern-preview-dot {
+          width: 16px;
+          height: 16px;
+          border-radius: 50%;
+          background: #673fb5;
+        }
+        @media (prefers-color-scheme: dark) {
+          .pattern-card {
+            border-color: rgba(151, 131, 214, 0.5);
+            background: rgba(151, 131, 214, 0.12);
+          }
+          .pattern-preview-cell {
+            border-color: rgba(151, 131, 214, 0.5);
+          }
+          .pattern-preview-dot {
+            background: #bba5ff;
+          }
         }
       </style>
     </head>
