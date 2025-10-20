@@ -71,6 +71,7 @@ const elements = {
   tempo: document.getElementById("tempo"),
   tempoValue: document.getElementById("tempo-value"),
   playToggle: document.getElementById("play-toggle"),
+  newLine: document.getElementById("regenerate-line"),
   exportMidi: document.getElementById("export-midi"),
   midiLearn: document.getElementById("midi-learn"),
   clearChords: document.getElementById("clear-chords"),
@@ -1264,6 +1265,24 @@ function generateLineFromCapturedChords() {
   return { success: true, groups };
 }
 
+function regenerateLineFromChords() {
+  stopPlayback(false);
+  if (!state.chords.length) {
+    setStatus("No hay acordes capturados. Usa MIDI Learn para generar la línea.");
+    return;
+  }
+  const result = generateLineFromCapturedChords();
+  if (result.success) {
+    setStatus(`Nueva línea generada para ${state.chords.length} acordes.`);
+    return;
+  }
+  if (result.reason === "invalid") {
+    setStatus("No fue posible generar una nueva línea con los acordes actuales.");
+    return;
+  }
+  setStatus("No hay acordes capturados. Captura acordes para generar la línea.");
+}
+
 function ensureValidPatternsAfterCapture() {
   if (!state.patternGroups.length) return false;
   if (state.patternGroups.length !== state.chords.length) return false;
@@ -1283,6 +1302,9 @@ function ensureValidPatternsAfterCapture() {
 function attachEvents() {
   if (elements.playToggle) {
     elements.playToggle.addEventListener("click", handlePlaybackToggle);
+  }
+  if (elements.newLine) {
+    elements.newLine.addEventListener("click", regenerateLineFromChords);
   }
   if (elements.exportMidi) {
     elements.exportMidi.addEventListener("click", exportMidi);
