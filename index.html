@@ -20,102 +20,147 @@
     </header>
 
     <main>
-      <section class="midi-panel midi-panel--top" aria-label="Controles MIDI">
-        <div class="midi-sidebar midi-sidebar--top" role="menubar">
-          <div class="midi-sidebar__item" role="none">
+      <section class="control-stack" aria-label="Controles principales">
+        <div class="control-bar" role="group" aria-label="Patrones y captura">
+          <button
+            id="open-pattern-dictionary"
+            class="control-button control-button--icon"
+            type="button"
+            title="Abrir el diccionario completo de patrones melódicos"
+            aria-label="Diccionario de patrones melódicos"
+          >
+            <span aria-hidden="true">📖</span>
+            <span class="control-button__label">Patrones</span>
+          </button>
+          <button
+            id="midi-learn"
+            class="control-button toggle"
+            title="Activar o desactivar la captura MIDI continua"
+            aria-pressed="false"
+          >
+            <span class="label">MIDI Learn</span>
+            <span class="state" aria-live="polite">(apagado)</span>
+            <span class="indicator" aria-hidden="true"></span>
+          </button>
+          <label class="midi-input control-field" for="tempo">
+            <span class="midi-input__label">Tempo</span>
+            <div class="midi-input__field">
+              <input
+                id="tempo"
+                type="number"
+                min="40"
+                max="320"
+                value="280"
+                inputmode="numeric"
+                aria-describedby="tempo-help"
+                title="Ajustar tempo en BPM"
+              />
+              <span class="midi-input__suffix" id="tempo-help" aria-hidden="true">BPM</span>
+            </div>
+          </label>
+          <label class="midi-input control-field" for="swing">
+            <span class="midi-input__label">Swing</span>
+            <div class="midi-input__field">
+              <input
+                id="swing"
+                type="number"
+                min="0"
+                max="100"
+                value="28"
+                inputmode="numeric"
+                aria-describedby="swing-help"
+                title="Aplicar swing solo a la reproducción"
+              />
+              <span class="midi-input__suffix" id="swing-help" aria-hidden="true">%</span>
+            </div>
+          </label>
+        </div>
+
+        <div class="control-bar" role="group" aria-label="Reproducción y exportación">
+          <button
+            id="play-toggle"
+            class="control-button primary"
+            title="Reproducir o detener la línea generada"
+            aria-pressed="false"
+          >
+            Reproducir
+          </button>
+          <button
+            id="regenerate-line"
+            class="control-button"
+            title="Generar una nueva línea usando los mismos acordes capturados"
+          >
+            Nueva línea
+          </button>
+          <button id="export-midi" class="control-button" title="Exportar la línea como archivo MIDI">
+            Exportar MIDI
+          </button>
+          <button id="clear-chords" class="control-button" title="Eliminar acordes capturados">
+            Borrar acordes
+          </button>
+          <div class="control-group control-group--inline" role="group" aria-label="Salida MIDI">
+            <label for="midi-output" class="control-field control-field--compact">
+              <span class="control-field__label">Salida</span>
+              <div class="control-field__input">
+                <select
+                  id="midi-output"
+                  title="Seleccionar un puerto MIDI de salida para reproducir la línea"
+                  aria-label="Puerto MIDI de salida"
+                >
+                  <option value="">Reproducción interna (WebAudio)</option>
+                </select>
+              </div>
+            </label>
             <button
-              id="open-pattern-dictionary"
-              class="midi-icon"
-              aria-label="Diccionario de patrones melódicos"
-              role="menuitem"
+              id="refresh-midi-outputs"
+              class="control-button control-button--ghost"
+              title="Actualizar la lista de puertos MIDI disponibles"
               type="button"
-              title="Abrir el diccionario completo de patrones melódicos"
             >
-              📖
+              Actualizar
             </button>
           </div>
+        </div>
 
-          <div class="midi-sidebar__item" role="none">
-            <button class="midi-icon" aria-label="Captura MIDI" role="menuitem" type="button">🎙️</button>
-            <div class="midi-flyout" role="group" aria-label="Captura MIDI">
+        <div class="control-bar" role="group" aria-label="Transposición y acordes">
+          <div class="control-group" role="group" aria-label="Transposición">
+            <span class="control-group__label">Transposición</span>
+            <div class="transpose-controls">
+              <button type="button" id="transpose-down-octave" class="control-button" title="Bajar una octava">
+                −8va
+              </button>
+              <button type="button" id="transpose-down-semitone" class="control-button" title="Bajar un semitono">
+                −1
+              </button>
+              <span id="transpose-value" class="transpose-value" aria-live="polite"></span>
+              <button type="button" id="transpose-up-semitone" class="control-button" title="Subir un semitono">
+                +1
+              </button>
               <button
-                id="midi-learn"
-                class="toggle"
-                title="Activar o desactivar la captura MIDI continua"
-                aria-pressed="false"
+                type="button"
+                id="transpose-up-octave"
+                class="control-button"
+                title="Subir una octava"
               >
-                <span class="label">MIDI Learn</span>
-                <span class="state" aria-live="polite">(apagado)</span>
-                <span class="indicator" aria-hidden="true"></span>
+                +8va
+              </button>
+              <button
+                type="button"
+                id="transpose-reset"
+                class="control-button transpose-reset"
+                title="Restablecer transposición"
+              >
+                Reset
               </button>
             </div>
           </div>
 
-          <div class="midi-sidebar__item" role="none">
-            <button class="midi-icon" aria-label="Ritmo y swing" role="menuitem" type="button">⏱️</button>
-            <div class="midi-flyout" role="group" aria-label="Ajustes de tempo y swing">
-              <label class="midi-input" for="tempo">
-                <span class="midi-input__label">Tempo</span>
-                <div class="midi-input__field">
-                  <input
-                    id="tempo"
-                    type="number"
-                    min="40"
-                    max="320"
-                    value="280"
-                    inputmode="numeric"
-                    aria-describedby="tempo-help"
-                    title="Ajustar tempo en BPM"
-                  />
-                  <span class="midi-input__suffix" id="tempo-help" aria-hidden="true">BPM</span>
-                </div>
-              </label>
-              <label class="midi-input" for="swing">
-                <span class="midi-input__label">Swing</span>
-                <div class="midi-input__field">
-                  <input
-                    id="swing"
-                    type="number"
-                    min="0"
-                    max="100"
-                    value="28"
-                    inputmode="numeric"
-                    aria-describedby="swing-help"
-                    title="Aplicar swing solo a la reproducción"
-                  />
-                  <span class="midi-input__suffix" id="swing-help" aria-hidden="true">%</span>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          <div class="midi-sidebar__item" role="none">
-            <button class="midi-icon" aria-label="Reproducción" role="menuitem" type="button">▶️</button>
-            <div class="midi-flyout" role="group" aria-label="Reproducción">
-              <button
-                id="play-toggle"
-                class="primary"
-                title="Reproducir o detener la línea generada"
-                aria-pressed="false"
-              >
-                Reproducir
-              </button>
-              <button id="regenerate-line" title="Generar una nueva línea usando los mismos acordes capturados">
-                Nueva línea
-              </button>
-              <button id="export-midi" title="Exportar la línea como archivo MIDI">Exportar MIDI</button>
-              <button id="clear-chords" title="Eliminar acordes capturados">Borrar acordes</button>
-            </div>
+          <div class="control-group control-group--fill" aria-label="Acordes capturados">
+            <span class="control-group__label">Acordes</span>
+            <div class="captured-chords" aria-live="polite" aria-label="Acordes capturados"></div>
           </div>
         </div>
       </section>
-
-      <div
-        class="panel-resizer"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Redimensionar paneles"
-      ></div>
 
       <section class="visualizations" aria-labelledby="visualizations-title">
         <div class="section-title" id="visualizations-title">Distribución de alturas</div>
@@ -136,57 +181,7 @@
         </div>
       </section>
 
-      <div
-        class="panel-resizer panel-resizer--right"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Redimensionar paneles"
-      ></div>
     </main>
-
-    <section class="midi-panel midi-panel--bottom" aria-label="Ajustes adicionales">
-      <div class="midi-sidebar midi-sidebar--bottom" role="menubar">
-        <div class="midi-sidebar__item" role="none">
-          <button class="midi-icon" aria-label="Transposición" role="menuitem" type="button">📈</button>
-          <div class="midi-flyout" role="group" aria-label="Transposición">
-            <button type="button" id="transpose-down-octave" title="Bajar una octava">−8va</button>
-            <span id="transpose-value" class="transpose-value" aria-live="polite"></span>
-            <button type="button" id="transpose-up-octave" title="Subir una octava">+8va</button>
-            <button type="button" id="transpose-down-semitone" title="Bajar un semitono">−1</button>
-            <button type="button" id="transpose-reset" class="transpose-reset" title="Restablecer transposición">
-              Reset
-            </button>
-            <button type="button" id="transpose-up-semitone" title="Subir un semitono">+1</button>
-          </div>
-        </div>
-
-        <div class="midi-sidebar__item" role="none">
-          <button class="midi-icon" aria-label="Salida MIDI" role="menuitem" type="button">🔈</button>
-          <div class="midi-flyout" role="group" aria-label="Salida MIDI">
-            <label for="midi-output" title="Enviar la reproducción a un puerto MIDI externo">Destino</label>
-            <div class="midi-output__controls">
-              <select
-                id="midi-output"
-                title="Seleccionar un puerto MIDI de salida para reproducir la línea"
-                aria-label="Puerto MIDI de salida"
-              >
-                <option value="">Reproducción interna (WebAudio)</option>
-              </select>
-              <button id="refresh-midi-outputs" title="Actualizar la lista de puertos MIDI disponibles">
-                Actualizar
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="midi-sidebar__item" role="none">
-          <button class="midi-icon" aria-label="Acordes capturados" role="menuitem" type="button">🎹</button>
-          <div class="midi-flyout midi-flyout--wide" role="group" aria-label="Acordes capturados">
-            <div class="captured-chords" aria-live="polite" aria-label="Acordes capturados"></div>
-          </div>
-        </div>
-      </div>
-    </section>
 
     <section
       class="virtual-keyboard"
