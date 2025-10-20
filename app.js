@@ -25,6 +25,7 @@ const ALL_PATTERNS = [...FOUR_NOTE_PATTERNS, ...THREE_NOTE_PATTERNS];
 const PATTERN_LOOKUP = new Map(ALL_PATTERNS.map((pattern) => [pattern.id, pattern]));
 
 const DEFAULT_CHORD = [60, 64, 67, 71]; // Cmaj7
+DEFAULT_CHORD.voiceCount = DEFAULT_CHORD.length;
 const DEFAULT_BPM = 240;
 
 const NOTES_PER_MEASURE = 8;
@@ -280,18 +281,33 @@ function findPatternById(id) {
   return PATTERN_LOOKUP.get(id) || null;
 }
 
-function getChordVoiceCount(chord) {
-  const source = chord && chord.length ? chord : DEFAULT_CHORD;
-  const limited = source.slice(0, 4);
-  const count = limited.length;
-  if (count) {
-    return count;
+function normalizeVoiceCount(value) {
+  if (Number.isFinite(value)) {
+    return Math.max(1, Math.min(4, Math.round(value)));
   }
-  return 1;
+  return null;
+}
+
+function getChordVoiceCount(chord) {
+  const storedCount = chord && normalizeVoiceCount(chord.voiceCount);
+  if (storedCount) {
+    return storedCount;
+  }
+
+  const hasLength = chord && typeof chord.length === "number" && chord.length > 0;
+  const source = hasLength ? chord : DEFAULT_CHORD;
+  const limited = Array.from(source).slice(0, 4).filter((note) => Number.isFinite(note));
+  const computed = normalizeVoiceCount(limited.length);
+  if (computed) {
+    return computed;
+  }
+
+  return normalizeVoiceCount(DEFAULT_CHORD.voiceCount) || 1;
 }
 
 function getPatternPoolForChord(chord) {
-  return getChordVoiceCount(chord) <= 3 ? THREE_NOTE_PATTERNS : FOUR_NOTE_PATTERNS;
+  const voiceCount = getChordVoiceCount(chord);
+  return voiceCount >= 4 ? FOUR_NOTE_PATTERNS : THREE_NOTE_PATTERNS;
 }
 
 function patternFitsChord(pattern, chord) {
@@ -718,7 +734,9 @@ function onNoteOn(note) {
     .slice(-4);
   if (uniqueNotes.length >= 3) {
     const capturedNotes = uniqueNotes.map((item) => item.note);
+    const voiceCount = Math.min(capturedNotes.length, 4);
     const chord = capturedNotes.slice(-4);
+    chord.voiceCount = voiceCount;
     state.chords.push(chord);
     renderChords();
     const adjusted = ensureValidPatternsAfterCapture();
