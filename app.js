@@ -563,11 +563,13 @@ function createRestNote(VF) {
   return new VF.StaveNote({ clef: "treble", keys: ["b/4"], duration: "8r" });
 }
 
-function createStaveNoteFromMidi(VF, midi, accent = false) {
+function createStaveNoteFromMidi(VF, midi, accent = false, accidentalOverride) {
   const { key, accidental } = midiNoteToVexFlowKey(midi);
   const note = new VF.StaveNote({ clef: "treble", keys: [key], duration: "8" });
-  if (accidental) {
-    note.addAccidental(0, new VF.Accidental(accidental));
+  const finalAccidental =
+    accidentalOverride === undefined ? accidental : accidentalOverride;
+  if (finalAccidental) {
+    note.addAccidental(0, new VF.Accidental(finalAccidental));
   }
   if (accent) {
     note.addArticulation(0, new VF.Articulation("a>").setPosition(VF.Modifier.Position.ABOVE));
@@ -596,8 +598,8 @@ function renderScore(noteEntries, accentIndices = []) {
   const container = elements.scoreViewer;
   container.innerHTML = "";
 
-  const measuresPerRow = 4;
-  const staveWidth = 240;
+  const measuresPerRow = 1;
+  const staveWidth = 320;
   const staveHeight = 120;
   const measureSpacing = 12;
   const rowSpacing = 48;
@@ -635,11 +637,33 @@ function renderScore(noteEntries, accentIndices = []) {
     }
     stave.setContext(context).draw();
 
+    const accidentalState = new Map();
+
     const tickables = measure.map((entry) => {
       if (entry.type === "rest") {
         return createRestNote(VF);
       }
-      return createStaveNoteFromMidi(VF, entry.midi, entry.accent);
+      const { key, accidental: defaultAccidental } = midiNoteToVexFlowKey(entry.midi);
+      const previousAccidental = accidentalState.get(key);
+      let accidentalOverride;
+
+      if (defaultAccidental) {
+        if (previousAccidental === defaultAccidental) {
+          accidentalOverride = null;
+        } else {
+          accidentalOverride = defaultAccidental;
+        }
+        accidentalState.set(key, defaultAccidental);
+      } else {
+        if (previousAccidental && previousAccidental !== "n") {
+          accidentalOverride = "n";
+        } else {
+          accidentalOverride = null;
+        }
+        accidentalState.set(key, null);
+      }
+
+      return createStaveNoteFromMidi(VF, entry.midi, entry.accent, accidentalOverride);
     });
 
     const voice = new VF.Voice({ num_beats: 4, beat_value: 4 }).setStrict(false);
