@@ -20,12 +20,11 @@
     </header>
 
     <main>
-      <section class="midi-panel" aria-labelledby="midi-title">
-        <div class="section-title" id="midi-title">Panel MIDI</div>
-        <div class="midi-panel__layout">
-          <article class="midi-card" aria-labelledby="midi-capture-title">
-            <h2 class="midi-card__title" id="midi-capture-title">Captura</h2>
-            <div class="midi-card__body midi-card__body--center">
+      <section class="midi-panel" aria-label="Controles MIDI">
+        <div class="midi-sidebar" role="menubar">
+          <div class="midi-sidebar__item" role="none">
+            <button class="midi-icon" aria-label="Captura MIDI" role="menuitem" type="button">🎙️</button>
+            <div class="midi-flyout" role="group" aria-label="Captura MIDI">
               <button
                 id="midi-learn"
                 class="toggle"
@@ -37,11 +36,11 @@
                 <span class="indicator" aria-hidden="true"></span>
               </button>
             </div>
-          </article>
+          </div>
 
-          <article class="midi-card" aria-labelledby="midi-tempo-title">
-            <h2 class="midi-card__title" id="midi-tempo-title">Ritmo</h2>
-            <div class="midi-card__body midi-card__body--grid">
+          <div class="midi-sidebar__item" role="none">
+            <button class="midi-icon" aria-label="Ritmo y swing" role="menuitem" type="button">⏱️</button>
+            <div class="midi-flyout" role="group" aria-label="Ajustes de tempo y swing">
               <label class="midi-input" for="tempo">
                 <span class="midi-input__label">Tempo</span>
                 <div class="midi-input__field">
@@ -75,11 +74,11 @@
                 </div>
               </label>
             </div>
-          </article>
+          </div>
 
-          <article class="midi-card midi-card--full" aria-labelledby="midi-playback-title">
-            <h2 class="midi-card__title" id="midi-playback-title">Reproducción</h2>
-            <div class="midi-card__body midi-card__body--actions">
+          <div class="midi-sidebar__item" role="none">
+            <button class="midi-icon" aria-label="Reproducción" role="menuitem" type="button">▶️</button>
+            <div class="midi-flyout" role="group" aria-label="Reproducción">
               <button
                 id="play-toggle"
                 class="primary"
@@ -88,24 +87,17 @@
               >
                 Reproducir
               </button>
-              <button
-                id="regenerate-line"
-                title="Generar una nueva línea usando los mismos acordes capturados"
-              >
+              <button id="regenerate-line" title="Generar una nueva línea usando los mismos acordes capturados">
                 Nueva línea
               </button>
               <button id="export-midi" title="Exportar la línea como archivo MIDI">Exportar MIDI</button>
               <button id="clear-chords" title="Eliminar acordes capturados">Borrar acordes</button>
             </div>
-          </article>
+          </div>
 
-          <article class="midi-card" aria-labelledby="midi-transpose-title">
-            <h2 class="midi-card__title" id="midi-transpose-title">Transposición</h2>
-            <div
-              class="midi-card__body midi-card__body--transpose"
-              role="group"
-              aria-labelledby="midi-transpose-title"
-            >
+          <div class="midi-sidebar__item" role="none">
+            <button class="midi-icon" aria-label="Transposición" role="menuitem" type="button">📈</button>
+            <div class="midi-flyout" role="group" aria-label="Transposición">
               <button type="button" id="transpose-down-octave" title="Bajar una octava">−8va</button>
               <span id="transpose-value" class="transpose-value" aria-live="polite"></span>
               <button type="button" id="transpose-up-octave" title="Subir una octava">+8va</button>
@@ -115,11 +107,11 @@
               </button>
               <button type="button" id="transpose-up-semitone" title="Subir un semitono">+1</button>
             </div>
-          </article>
+          </div>
 
-          <article class="midi-card" aria-labelledby="midi-output-title">
-            <h2 class="midi-card__title" id="midi-output-title">Salida</h2>
-            <div class="midi-card__body midi-card__body--stack">
+          <div class="midi-sidebar__item" role="none">
+            <button class="midi-icon" aria-label="Salida MIDI" role="menuitem" type="button">🔈</button>
+            <div class="midi-flyout" role="group" aria-label="Salida MIDI">
               <label for="midi-output" title="Enviar la reproducción a un puerto MIDI externo">Destino</label>
               <div class="midi-output__controls">
                 <select
@@ -134,14 +126,14 @@
                 </button>
               </div>
             </div>
-          </article>
+          </div>
 
-          <article class="midi-card midi-card--full" aria-labelledby="midi-chords-title">
-            <h2 class="midi-card__title" id="midi-chords-title">Acordes capturados</h2>
-            <div class="midi-card__body midi-card__body--wrap">
+          <div class="midi-sidebar__item" role="none">
+            <button class="midi-icon" aria-label="Acordes capturados" role="menuitem" type="button">🎹</button>
+            <div class="midi-flyout midi-flyout--wide" role="group" aria-label="Acordes capturados">
               <div class="captured-chords" aria-live="polite" aria-label="Acordes capturados"></div>
             </div>
-          </article>
+          </div>
         </div>
       </section>
 
