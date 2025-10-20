@@ -597,14 +597,20 @@ function renderScore(noteEntries, accentIndices = []) {
   container.innerHTML = "";
 
   const measuresPerRow = 4;
-  const measureWidth = 200;
-  const measureHeight = 140;
-  const horizontalPadding = 20;
+  const staveWidth = 240;
+  const staveHeight = 120;
+  const measureSpacing = 12;
+  const rowSpacing = 48;
+  const horizontalPadding = 24;
   const verticalPadding = 30;
+  const bottomPadding = 30;
   const totalMeasures = measures.length;
   const rows = Math.ceil(totalMeasures / measuresPerRow);
-  const width = Math.max(measureWidth, Math.min(totalMeasures, measuresPerRow) * measureWidth + horizontalPadding);
-  const height = Math.max(measureHeight, rows * measureHeight + verticalPadding);
+  const columns = Math.min(totalMeasures, measuresPerRow);
+  const width =
+    columns * staveWidth + Math.max(columns - 1, 0) * measureSpacing + horizontalPadding * 2;
+  const height =
+    rows * staveHeight + Math.max(rows - 1, 0) * rowSpacing + verticalPadding + bottomPadding;
 
   const renderer = new VF.Renderer(container, VF.Renderer.Backends.SVG);
   renderer.resize(width, height);
@@ -614,11 +620,18 @@ function renderScore(noteEntries, accentIndices = []) {
   measures.forEach((measure, index) => {
     const row = Math.floor(index / measuresPerRow);
     const column = index % measuresPerRow;
-    const x = 10 + column * measureWidth;
-    const y = 20 + row * measureHeight;
-    const stave = new VF.Stave(x, y, measureWidth - 20);
+    const x =
+      horizontalPadding + column * (staveWidth + measureSpacing);
+    const y = verticalPadding + row * (staveHeight + rowSpacing);
+    const stave = new VF.Stave(x, y, staveWidth);
     if (index === 0) {
       stave.addClef("treble").addTimeSignature("4/4");
+    }
+    if (column > 0) {
+      stave.setBegBarType(VF.Barline.type.NONE);
+    }
+    if (index === totalMeasures - 1) {
+      stave.setEndBarType(VF.Barline.type.END);
     }
     stave.setContext(context).draw();
 
@@ -629,10 +642,27 @@ function renderScore(noteEntries, accentIndices = []) {
       return createStaveNoteFromMidi(VF, entry.midi, entry.accent);
     });
 
-    const voice = new VF.Voice({ num_beats: 4, beat_value: 4 });
+    const voice = new VF.Voice({ num_beats: 4, beat_value: 4 }).setStrict(false);
     voice.addTickables(tickables);
-    new VF.Formatter().joinVoices([voice]).format([voice], measureWidth - 40);
+
+    const beams = [];
+    let beamGroup = [];
+    measure.forEach((entry, noteIndex) => {
+      if (entry.type !== "note") {
+        beamGroup = [];
+        return;
+      }
+      beamGroup.push(tickables[noteIndex]);
+      if (beamGroup.length === 4) {
+        beams.push(new VF.Beam(beamGroup));
+        beamGroup = [];
+      }
+    });
+
+    const formatter = new VF.Formatter();
+    formatter.joinVoices([voice]).format([voice], staveWidth - 36);
     voice.draw(context, stave);
+    beams.forEach((beam) => beam.setContext(context).draw());
   });
 }
 

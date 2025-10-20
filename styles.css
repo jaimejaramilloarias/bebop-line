@@ -72,18 +72,19 @@ body {
 
 main {
   flex: 1;
-  width: min(1200px, 94vw);
+  width: min(1180px, 96vw);
   margin: 0 auto;
-  padding: 2rem 0 3rem;
+  padding: 2rem 1rem 3rem;
   display: grid;
-  gap: 2rem;
-  grid-template-columns: minmax(56px, 96px) 1fr;
+  column-gap: 1.35rem;
+  row-gap: 2rem;
+  grid-template-columns: minmax(62px, 88px) minmax(0, 1fr);
   align-items: start;
 }
 
 .midi-panel {
   padding: 0.75rem 0.5rem;
-  width: clamp(56px, 6vw, 96px);
+  width: clamp(60px, 6vw, 88px);
   display: flex;
   justify-content: center;
   position: sticky;
@@ -169,6 +170,7 @@ main {
 
 .visualizations {
   grid-column: 2;
+  padding: 1.5rem 1.25rem 1.75rem;
 }
 
 .section-title--score {
