@@ -106,6 +106,7 @@ const elements = {
   panelResizers: Array.from(document.querySelectorAll(".panel-resizer")),
   visualizations: document.querySelector(".visualizations"),
   catalog: document.querySelector(".catalog-collections"),
+  patternDictionaryButton: document.getElementById("open-pattern-dictionary"),
   matrix: document.querySelector(".matrix"),
   tempo: document.getElementById("tempo"),
   swing: document.getElementById("swing"),
@@ -123,6 +124,8 @@ const elements = {
   midiOutput: document.getElementById("midi-output"),
   refreshMidiOutputs: document.getElementById("refresh-midi-outputs"),
   chordsContainer: document.querySelector(".captured-chords"),
+  manualNoteGroupsInput: document.getElementById("manual-note-groups"),
+  applyManualNoteGroups: document.getElementById("apply-manual-note-groups"),
   status: document.getElementById("status"),
   themeToggle: document.getElementById("theme-toggle"),
   scoreViewer: document.getElementById("score-viewer")
@@ -992,11 +995,289 @@ function renderMatrix() {
 }
 
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const NOTE_OFFSETS = {
+  c: 0,
+  d: 2,
+  e: 4,
+  f: 5,
+  g: 7,
+  a: 9,
+  b: 11
+};
+const ACCIDENTAL_OFFSETS = new Map([
+  ["#", 1],
+  ["♯", 1],
+  ["b", -1],
+  ["♭", -1]
+]);
 
 function noteNumberToName(note) {
   const name = NOTE_NAMES[note % 12];
   const octave = Math.floor(note / 12) - 1;
   return `${name}${octave}`;
+}
+
+function parseNoteToken(token) {
+  const trimmed = token.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (/^\d+$/.test(trimmed)) {
+    const numeric = Number.parseInt(trimmed, 10);
+    if (Number.isFinite(numeric) && numeric >= 0 && numeric <= 127) {
+      return numeric;
+    }
+    return null;
+  }
+  const match = trimmed.match(/^([A-Ga-g])([#b♯♭]?)(-?\d{1,2})$/);
+  if (!match) {
+    return null;
+  }
+  const [, letter, accidental = "", octaveText] = match;
+  const base = NOTE_OFFSETS[letter.toLowerCase()];
+  if (base === undefined) {
+    return null;
+  }
+  const accidentalOffset = ACCIDENTAL_OFFSETS.get(accidental) ?? 0;
+  const octave = Number.parseInt(octaveText, 10);
+  if (!Number.isFinite(octave)) {
+    return null;
+  }
+  const midi = (octave + 1) * 12 + base + accidentalOffset;
+  if (!Number.isFinite(midi) || midi < 0 || midi > 127) {
+    return null;
+  }
+  return midi;
+}
+
+function parseManualNoteGroupsInput(input) {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return { success: true, chords: [] };
+  }
+  const groups = trimmed
+    .split("/")
+    .map((group) => group.trim())
+    .filter(Boolean);
+  if (!groups.length) {
+    return { success: false, message: "No se encontraron grupos válidos." };
+  }
+
+  const chords = [];
+  for (const groupText of groups) {
+    const tokens = groupText.split(/[\s,]+/).filter(Boolean);
+    if (!tokens.length) {
+      return {
+        success: false,
+        message: `El grupo "${groupText}" no contiene notas válidas.`
+      };
+    }
+    const notes = [];
+    for (const token of tokens) {
+      const midi = parseNoteToken(token);
+      if (midi === null) {
+        return {
+          success: false,
+          message: `No se reconoce la nota "${token}". Usa formatos como C4, Eb4 o 62.`
+        };
+      }
+      notes.push(midi);
+    }
+    const unique = Array.from(new Set(notes)).sort((a, b) => a - b);
+    if (unique.length < 3) {
+      return {
+        success: false,
+        message: `Cada grupo debe tener al menos 3 notas. Revisa "${groupText}".`
+      };
+    }
+    if (unique.length > 4) {
+      return {
+        success: false,
+        message: `Limita cada grupo a 4 notas como máximo. Revisa "${groupText}".`
+      };
+    }
+    const chord = unique.slice();
+    chord.voiceCount = chord.length;
+    chords.push(chord);
+  }
+
+  return { success: true, chords };
+}
+
+function buildPatternDictionaryHtml() {
+  const renderSection = (title, patterns) => {
+    const items = patterns
+      .map(
+        (pattern) =>
+          `<li><span class="pattern-id">${pattern.id}</span><span class="pattern-voices">${pattern.values.join(
+            " → "
+          )}</span></li>`
+      )
+      .join("");
+    return `
+      <section class="dictionary-section">
+        <h2>${title}</h2>
+        <ul class="pattern-list">${items}</ul>
+      </section>
+    `;
+  };
+
+  return `<!DOCTYPE html>
+  <html lang="es">
+    <head>
+      <meta charset="utf-8" />
+      <title>Diccionario de patrones melódicos</title>
+      <style>
+        :root {
+          color-scheme: light dark;
+        }
+        body {
+          font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+          margin: 0;
+          padding: 2rem clamp(1.5rem, 4vw, 3rem);
+          background: #f7f5ff;
+          color: #1d1d1f;
+        }
+        @media (prefers-color-scheme: dark) {
+          body {
+            background: #141218;
+            color: #f5f7ff;
+          }
+        }
+        h1 {
+          margin-top: 0;
+          font-size: clamp(1.4rem, 3vw, 2rem);
+        }
+        h2 {
+          font-size: 1.15rem;
+          margin-bottom: 0.5rem;
+          margin-top: 1.75rem;
+        }
+        p {
+          line-height: 1.6;
+          max-width: 60ch;
+        }
+        .dictionary-section:first-of-type h2 {
+          margin-top: 1.25rem;
+        }
+        .pattern-list {
+          list-style: none;
+          margin: 0;
+          padding: 0;
+          display: grid;
+          gap: 0.4rem 1.25rem;
+          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        }
+        .pattern-list li {
+          display: flex;
+          justify-content: space-between;
+          gap: 0.75rem;
+          padding: 0.4rem 0.6rem;
+          border-radius: 12px;
+          background: rgba(103, 63, 181, 0.12);
+          color: inherit;
+          font-variant-numeric: tabular-nums;
+        }
+        .pattern-id {
+          font-weight: 600;
+          letter-spacing: 0.04em;
+        }
+        .pattern-voices {
+          opacity: 0.75;
+          font-size: 0.9rem;
+        }
+      </style>
+    </head>
+    <body>
+      <h1>Diccionario de patrones melódicos</h1>
+      <p>
+        Cada patrón describe el orden relativo de las voces (1 grave → 4 aguda) dentro de un compás.
+        Úsalos como guía para planear líneas y asegurar transiciones suaves entre acordes.
+      </p>
+      ${renderSection("Patrones de 4 alturas", FOUR_NOTE_PATTERNS)}
+      ${renderSection("Patrones de 3 alturas", THREE_NOTE_PATTERNS)}
+    </body>
+  </html>`;
+}
+
+function openPatternDictionaryWindow() {
+  if (typeof window === "undefined") {
+    setStatus("La ventana del diccionario solo está disponible en el navegador.");
+    return;
+  }
+  const html = buildPatternDictionaryHtml();
+  const features = "width=560,height=680,noopener=yes";
+  const ref = window.open("", "patternDictionary", features);
+  if (!ref) {
+    setStatus("El navegador bloqueó la ventana del diccionario.");
+    return;
+  }
+  ref.document.open();
+  ref.document.write(html);
+  ref.document.close();
+  if (typeof ref.focus === "function") {
+    ref.focus();
+  }
+}
+
+function handleManualNoteGroupsApply() {
+  if (!elements.manualNoteGroupsInput) {
+    return;
+  }
+  const raw = elements.manualNoteGroupsInput.value || "";
+  const result = parseManualNoteGroupsInput(raw);
+  if (!result.success) {
+    elements.manualNoteGroupsInput.setAttribute("aria-invalid", "true");
+    setStatus(result.message);
+    return;
+  }
+
+  elements.manualNoteGroupsInput.removeAttribute("aria-invalid");
+  stopPlayback(false);
+
+  if (!result.chords.length) {
+    clearChords();
+    setStatus("Entrada manual vacía. Acordes borrados.");
+    return;
+  }
+
+  if (state.midiArmed) {
+    void setMidiLearnState(false, { skipGenerate: true });
+  }
+
+  state.chords = result.chords;
+  state.replacementIndex = null;
+  state.pendingReplacementDisarm = false;
+  state.lastCapturedChordIndex = null;
+  renderChords();
+
+  const lineResult = generateLineFromCapturedChords();
+  if (lineResult.success) {
+    setStatus(`Se cargaron ${result.chords.length} grupos manuales.`);
+    return;
+  }
+  updatePatternGroups([]);
+  state.midiLine = EMPTY_MIDI_LINE;
+  if (lineResult.reason === "invalid") {
+    setStatus("No fue posible generar una línea válida con los grupos escritos.");
+    return;
+  }
+  setStatus("No hay grupos manuales para generar la línea.");
+}
+
+function handleManualNoteGroupsInputChange() {
+  if (!elements.manualNoteGroupsInput) {
+    return;
+  }
+  elements.manualNoteGroupsInput.removeAttribute("aria-invalid");
+}
+
+function handleManualNoteGroupsKeydown(event) {
+  if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey)) {
+    return;
+  }
+  event.preventDefault();
+  handleManualNoteGroupsApply();
 }
 
 function handleCatalogDragStart(event, patternId) {
@@ -1307,6 +1588,9 @@ function clearChords() {
   updatePatternGroups([]);
   state.midiLine = EMPTY_MIDI_LINE;
   state.lastCaptureTime = 0;
+  if (elements.manualNoteGroupsInput) {
+    elements.manualNoteGroupsInput.removeAttribute("aria-invalid");
+  }
   setStatus("Acordes borrados.");
 }
 
@@ -2013,6 +2297,9 @@ function attachEvents() {
   if (elements.exportMidi) {
     elements.exportMidi.addEventListener("click", exportMidi);
   }
+  if (elements.patternDictionaryButton) {
+    elements.patternDictionaryButton.addEventListener("click", openPatternDictionaryWindow);
+  }
   elements.midiLearn.addEventListener("click", toggleMidiLearn);
   elements.clearChords.addEventListener("click", clearChords);
   if (elements.midiOutput) {
@@ -2020,6 +2307,13 @@ function attachEvents() {
   }
   if (elements.refreshMidiOutputs) {
     elements.refreshMidiOutputs.addEventListener("click", () => refreshMidiOutputs(true));
+  }
+  if (elements.applyManualNoteGroups) {
+    elements.applyManualNoteGroups.addEventListener("click", handleManualNoteGroupsApply);
+  }
+  if (elements.manualNoteGroupsInput) {
+    elements.manualNoteGroupsInput.addEventListener("input", handleManualNoteGroupsInputChange);
+    elements.manualNoteGroupsInput.addEventListener("keydown", handleManualNoteGroupsKeydown);
   }
   document.addEventListener("keydown", handleGlobalKeydown);
   if (elements.panelResizers.length) {

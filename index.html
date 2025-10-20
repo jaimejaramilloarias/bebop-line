@@ -23,6 +23,19 @@
       <section class="midi-panel" aria-label="Controles MIDI">
         <div class="midi-sidebar" role="menubar">
           <div class="midi-sidebar__item" role="none">
+            <button
+              id="open-pattern-dictionary"
+              class="midi-icon"
+              aria-label="Diccionario de patrones melódicos"
+              role="menuitem"
+              type="button"
+              title="Abrir el diccionario completo de patrones melódicos"
+            >
+              📖
+            </button>
+          </div>
+
+          <div class="midi-sidebar__item" role="none">
             <button class="midi-icon" aria-label="Captura MIDI" role="menuitem" type="button">🎙️</button>
             <div class="midi-flyout" role="group" aria-label="Captura MIDI">
               <button
@@ -35,6 +48,27 @@
                 <span class="state" aria-live="polite">(apagado)</span>
                 <span class="indicator" aria-hidden="true"></span>
               </button>
+              <div class="manual-entry" role="group" aria-labelledby="manual-entry-label">
+                <label id="manual-entry-label" for="manual-note-groups">Grupos manuales</label>
+                <textarea
+                  id="manual-note-groups"
+                  class="manual-entry__input"
+                  rows="3"
+                  placeholder="C4 E4 G4 B4 / D4 F4 A4 C5"
+                  aria-describedby="manual-entry-help"
+                ></textarea>
+                <p id="manual-entry-help" class="manual-entry__help">
+                  Separa cada acorde con "/" y usa notas como C4, Eb4 o 62.
+                </p>
+                <button
+                  id="apply-manual-note-groups"
+                  type="button"
+                  class="manual-entry__button"
+                  title="Interpretar los grupos escritos y generar la línea"
+                >
+                  Cargar grupos
+                </button>
+              </div>
             </div>
           </div>
 
