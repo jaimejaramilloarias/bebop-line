@@ -49,6 +49,8 @@ const VELOCITY_BY_VOICE = {
 const DEFAULT_SWING_PERCENT = 0;
 const TRANSPOSE_LIMIT = 36;
 const SCORE_PLACEHOLDER_MESSAGE = "Captura acordes con MIDI Learn para generar la partitura.";
+const VEROVIO_TOOLKIT_RETRY_ATTEMPTS = 20;
+const VEROVIO_TOOLKIT_RETRY_DELAY_MS = 150;
 
 let verovioToolkitPromise = null;
 let scoreRenderRequestId = 0;
@@ -557,15 +559,15 @@ function setScorePlaceholder(message = SCORE_PLACEHOLDER_MESSAGE) {
   elements.scoreViewer.appendChild(placeholder);
 }
 
-function ensureVerovioToolkit() {
-  if (verovioToolkitPromise) {
-    return verovioToolkitPromise;
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function tryCreateVerovioToolkit() {
+  if (!window.verovio || typeof window.verovio.toolkit !== "function") {
+    return null;
   }
-  verovioToolkitPromise = new Promise((resolve) => {
-    if (!window.verovio || typeof window.verovio.toolkit !== "function") {
-      resolve(null);
-      return;
-    }
+  try {
     const toolkit = new window.verovio.toolkit();
     toolkit.setOptions({
       adjustPageHeight: 1,
@@ -576,7 +578,32 @@ function ensureVerovioToolkit() {
       breaks: "none",
       minLastJustification: 0
     });
-    resolve(toolkit);
+    return toolkit;
+  } catch (error) {
+    return null;
+  }
+}
+
+async function loadVerovioToolkitWithRetries() {
+  for (let attempt = 0; attempt < VEROVIO_TOOLKIT_RETRY_ATTEMPTS; attempt++) {
+    const toolkit = tryCreateVerovioToolkit();
+    if (toolkit) {
+      return toolkit;
+    }
+    await delay(VEROVIO_TOOLKIT_RETRY_DELAY_MS);
+  }
+  return null;
+}
+
+function ensureVerovioToolkit() {
+  if (verovioToolkitPromise) {
+    return verovioToolkitPromise;
+  }
+  verovioToolkitPromise = loadVerovioToolkitWithRetries().then((toolkit) => {
+    if (!toolkit) {
+      verovioToolkitPromise = null;
+    }
+    return toolkit;
   });
   return verovioToolkitPromise;
 }
