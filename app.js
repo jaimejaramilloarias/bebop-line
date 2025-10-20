@@ -723,19 +723,28 @@ function handleMidiMessage(event) {
 function onNoteOn(note) {
   if (!state.midiArmed) return;
   const now = performance.now();
-  state.captureQueue = state.captureQueue.filter((item) => now - item.time < 220);
   state.captureQueue.push({ note, time: now });
   state.activeNotes.add(note);
   if (state.awaitingRelease) return;
+
+  const activeNotes = state.activeNotes;
+  state.captureQueue = state.captureQueue.filter((item) => activeNotes.has(item.note));
+
   const uniqueMap = new Map();
-  state.captureQueue.forEach((item) => uniqueMap.set(item.note, item));
-  const uniqueNotes = Array.from(uniqueMap.values())
-    .sort((a, b) => a.time - b.time)
-    .slice(-4);
+  for (let i = state.captureQueue.length - 1; i >= 0; i--) {
+    const item = state.captureQueue[i];
+    if (!activeNotes.has(item.note) || uniqueMap.has(item.note)) {
+      continue;
+    }
+    uniqueMap.set(item.note, item);
+  }
+
+  const uniqueNotes = Array.from(uniqueMap.values()).sort((a, b) => a.time - b.time);
   if (uniqueNotes.length >= 3) {
-    const capturedNotes = uniqueNotes.map((item) => item.note);
-    const voiceCount = Math.min(capturedNotes.length, 4);
-    const chord = capturedNotes.slice(-4);
+    const capturedItems = uniqueNotes.slice(-4);
+    const capturedNotes = capturedItems.map((item) => item.note);
+    const voiceCount = Math.min(uniqueNotes.length, 4);
+    const chord = capturedNotes.slice();
     chord.voiceCount = voiceCount;
     state.chords.push(chord);
     renderChords();
@@ -761,6 +770,7 @@ function onNoteOn(note) {
 function onNoteOff(note) {
   if (!state.midiArmed) return;
   state.activeNotes.delete(note);
+  state.captureQueue = state.captureQueue.filter((item) => item.note !== note);
   if (state.awaitingRelease && state.activeNotes.size === 0) {
     state.awaitingRelease = false;
   }
