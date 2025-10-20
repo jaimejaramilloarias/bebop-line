@@ -5,6 +5,12 @@ import {
   extendChordWithNote,
   normalizeVoiceCount
 } from "./midi-capture-core.js";
+import {
+  NOTES_PER_MEASURE,
+  buildMeasureNoteSpecs,
+  midiNoteToVexFlowKey,
+  countMeasures
+} from "./score-utils.js";
 
 const FOUR_NOTE_PATTERN_IDS = [
   "1234",
@@ -36,7 +42,6 @@ const DEFAULT_CHORD = [60, 64, 67, 71]; // Cmaj7
 DEFAULT_CHORD.voiceCount = DEFAULT_CHORD.length;
 const DEFAULT_BPM = 240;
 
-const NOTES_PER_MEASURE = 8;
 const TICKS_PER_QUARTER = 480;
 const TICKS_PER_EIGHTH = TICKS_PER_QUARTER / 2;
 const EMPTY_MIDI_LINE = { events: [], measures: 0, totalTicks: 0 };
@@ -49,11 +54,6 @@ const VELOCITY_BY_VOICE = {
 const DEFAULT_SWING_PERCENT = 0;
 const TRANSPOSE_LIMIT = 36;
 const SCORE_PLACEHOLDER_MESSAGE = "Captura acordes con MIDI Learn para generar la partitura.";
-const VEROVIO_TOOLKIT_RETRY_ATTEMPTS = 20;
-const VEROVIO_TOOLKIT_RETRY_DELAY_MS = 150;
-
-let verovioToolkitPromise = null;
-let scoreRenderRequestId = 0;
 
 const state = {
   patternGroups: [],
@@ -525,7 +525,7 @@ function convertLineToMidi(noteEntries) {
   if (events.length > 0) {
     events[events.length - 1].velocity = 127;
   }
-  const measures = Math.ceil(noteEntries.length / NOTES_PER_MEASURE);
+  const measures = countMeasures(noteEntries.length, NOTES_PER_MEASURE);
   const totalTicks = events.length ? events[events.length - 1].startTicks + TICKS_PER_EIGHTH : 0;
   return { events, measures, totalTicks };
 }
@@ -559,136 +559,80 @@ function setScorePlaceholder(message = SCORE_PLACEHOLDER_MESSAGE) {
   elements.scoreViewer.appendChild(placeholder);
 }
 
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function createRestNote(VF) {
+  return new VF.StaveNote({ clef: "treble", keys: ["b/4"], duration: "8r" });
 }
 
-function tryCreateVerovioToolkit() {
-  if (!window.verovio || typeof window.verovio.toolkit !== "function") {
-    return null;
+function createStaveNoteFromMidi(VF, midi, accent = false) {
+  const { key, accidental } = midiNoteToVexFlowKey(midi);
+  const note = new VF.StaveNote({ clef: "treble", keys: [key], duration: "8" });
+  if (accidental) {
+    note.addAccidental(0, new VF.Accidental(accidental));
   }
-  try {
-    const toolkit = new window.verovio.toolkit();
-    toolkit.setOptions({
-      adjustPageHeight: 1,
-      pageHeight: 600,
-      pageWidth: 4800,
-      scale: 45,
-      unit: 6,
-      breaks: "none",
-      minLastJustification: 0
-    });
-    return toolkit;
-  } catch (error) {
-    return null;
+  if (accent) {
+    note.addArticulation(0, new VF.Articulation("a>").setPosition(VF.Modifier.Position.ABOVE));
   }
-}
-
-async function loadVerovioToolkitWithRetries() {
-  for (let attempt = 0; attempt < VEROVIO_TOOLKIT_RETRY_ATTEMPTS; attempt++) {
-    const toolkit = tryCreateVerovioToolkit();
-    if (toolkit) {
-      return toolkit;
-    }
-    await delay(VEROVIO_TOOLKIT_RETRY_DELAY_MS);
-  }
-  return null;
-}
-
-function ensureVerovioToolkit() {
-  if (verovioToolkitPromise) {
-    return verovioToolkitPromise;
-  }
-  verovioToolkitPromise = loadVerovioToolkitWithRetries().then((toolkit) => {
-    if (!toolkit) {
-      verovioToolkitPromise = null;
-    }
-    return toolkit;
-  });
-  return verovioToolkitPromise;
-}
-
-function midiNoteToMeiAttributes(note) {
-  const sanitized = clamp(Math.round(note) || 0, 0, 127);
-  const mapping = MEI_PITCH_MAP[sanitized % 12] || MEI_PITCH_MAP[0];
-  const octave = Math.floor(sanitized / 12) - 1;
-  const parts = [`pname="${mapping.pname}"`, `oct="${octave}"`, "dur=\"8\""];
-  if (mapping.accid) {
-    parts.push(`accid="${mapping.accid}"`);
-  }
-  return parts.join(" ");
-}
-
-function buildMeiFromNoteEntries(noteEntries, accentIndices = []) {
-  const accentSet = new Set(accentIndices);
-  const measures = [];
-  const totalMeasures = Math.ceil(noteEntries.length / NOTES_PER_MEASURE);
-  for (let measureIndex = 0; measureIndex < totalMeasures; measureIndex++) {
-    const start = measureIndex * NOTES_PER_MEASURE;
-    const entries = [];
-    for (let offset = 0; offset < NOTES_PER_MEASURE; offset++) {
-      const noteIndex = start + offset;
-      if (noteIndex >= noteEntries.length) {
-        break;
-      }
-      const entry = noteEntries[noteIndex];
-      const attributes = midiNoteToMeiAttributes(entry.note);
-      const accent = accentSet.has(noteIndex) ? " artic=\"acc\"" : "";
-      entries.push(`<note ${attributes}${accent}/>`);
-    }
-    measures.push(
-      `<measure n="${measureIndex + 1}"><staff n="1"><layer>${entries.join("")}</layer></staff></measure>`
-    );
-  }
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<mei xmlns="http://www.music-encoding.org/ns/mei">
-  <music>
-    <body>
-      <mdiv>
-        <score>
-          <scoreDef meter.count="4" meter.unit="4" key.sig="0">
-            <staffGrp>
-              <staffDef n="1" lines="5" clef.shape="G" clef.line="2"/>
-            </staffGrp>
-          </scoreDef>
-          <section>
-            ${measures.join("\n            ")}
-          </section>
-        </score>
-      </mdiv>
-    </body>
-  </music>
-</mei>`;
+  return note;
 }
 
 function renderScore(noteEntries, accentIndices = []) {
   if (!elements.scoreViewer) return;
-  const requestId = ++scoreRenderRequestId;
   if (!noteEntries.length) {
     setScorePlaceholder();
     return;
   }
-  ensureVerovioToolkit().then((toolkit) => {
-    if (requestId !== scoreRenderRequestId) {
-      return;
+  const VF = window.Vex?.Flow;
+  if (!VF) {
+    setScorePlaceholder("La partitura requiere soporte de VexFlow en el navegador.");
+    return;
+  }
+
+  const measures = buildMeasureNoteSpecs(noteEntries, accentIndices, NOTES_PER_MEASURE);
+  if (!measures.length) {
+    setScorePlaceholder();
+    return;
+  }
+
+  const container = elements.scoreViewer;
+  container.innerHTML = "";
+
+  const measuresPerRow = 4;
+  const measureWidth = 200;
+  const measureHeight = 140;
+  const horizontalPadding = 20;
+  const verticalPadding = 30;
+  const totalMeasures = measures.length;
+  const rows = Math.ceil(totalMeasures / measuresPerRow);
+  const width = Math.max(measureWidth, Math.min(totalMeasures, measuresPerRow) * measureWidth + horizontalPadding);
+  const height = Math.max(measureHeight, rows * measureHeight + verticalPadding);
+
+  const renderer = new VF.Renderer(container, VF.Renderer.Backends.SVG);
+  renderer.resize(width, height);
+  const context = renderer.getContext();
+  context.setFont("Arial", 10, "").setBackgroundFillStyle("transparent");
+
+  measures.forEach((measure, index) => {
+    const row = Math.floor(index / measuresPerRow);
+    const column = index % measuresPerRow;
+    const x = 10 + column * measureWidth;
+    const y = 20 + row * measureHeight;
+    const stave = new VF.Stave(x, y, measureWidth - 20);
+    if (index === 0) {
+      stave.addClef("treble").addTimeSignature("4/4");
     }
-    if (!toolkit) {
-      setScorePlaceholder("La partitura requiere soporte de Verovio en el navegador.");
-      return;
-    }
-    const mei = buildMeiFromNoteEntries(noteEntries, accentIndices);
-    try {
-      toolkit.loadData(mei);
-      if (requestId !== scoreRenderRequestId) {
-        return;
+    stave.setContext(context).draw();
+
+    const tickables = measure.map((entry) => {
+      if (entry.type === "rest") {
+        return createRestNote(VF);
       }
-      const svg = toolkit.renderToSVG(1, {});
-      elements.scoreViewer.innerHTML = svg;
-      elements.scoreViewer.scrollLeft = 0;
-    } catch (error) {
-      setScorePlaceholder("No se pudo renderizar la partitura generada.");
-    }
+      return createStaveNoteFromMidi(VF, entry.midi, entry.accent);
+    });
+
+    const voice = new VF.Voice({ num_beats: 4, beat_value: 4 });
+    voice.addTickables(tickables);
+    new VF.Formatter().joinVoices([voice]).format([voice], measureWidth - 40);
+    voice.draw(context, stave);
   });
 }
 
@@ -779,20 +723,6 @@ function renderMatrix() {
 }
 
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-const MEI_PITCH_MAP = [
-  { pname: "c" },
-  { pname: "c", accid: "s" },
-  { pname: "d" },
-  { pname: "d", accid: "s" },
-  { pname: "e" },
-  { pname: "f" },
-  { pname: "f", accid: "s" },
-  { pname: "g" },
-  { pname: "g", accid: "s" },
-  { pname: "a" },
-  { pname: "a", accid: "s" },
-  { pname: "b" }
-];
 
 function noteNumberToName(note) {
   const name = NOTE_NAMES[note % 12];
