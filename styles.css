@@ -361,11 +361,56 @@ button.toggle.active .indicator {
 }
 
 .chord-pill {
-  padding: 0.4rem 0.7rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.3rem 0.25rem 0.55rem;
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent);
   border: 1px solid var(--accent);
+}
+
+.chord-pill__main,
+.chord-pill__remove {
+  background: transparent;
+  border: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.chord-pill__main {
+  padding: 0;
+  text-align: left;
+}
+
+.chord-pill__main:focus-visible,
+.chord-pill__remove:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.chord-pill__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--background);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.chord-pill__remove:hover {
+  background: var(--accent-strong, var(--accent));
+}
+
+.chord-pill--editing {
+  box-shadow: 0 0 0 3px rgba(102, 63, 181, 0.25);
+  border-color: var(--accent-strong, var(--accent));
 }
 
 .sr-only {
