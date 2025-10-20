@@ -105,9 +105,15 @@ main {
 }
 
 .midi-panel {
-  padding: 0.75rem 0.5rem;
   display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
+  gap: 1.25rem;
+}
+
+.midi-panel--top {
+  padding: 0.75rem 0.5rem;
   position: sticky;
   top: 6.25rem;
   align-self: start;
@@ -116,12 +122,29 @@ main {
   width: 100%;
 }
 
+.midi-panel--bottom {
+  width: min(1320px, 98vw);
+  margin: 0 auto;
+  padding: 1.5rem 1rem 0;
+}
+
 .midi-sidebar {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.75rem;
   width: 100%;
+}
+
+.midi-sidebar--bottom {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.midi-sidebar--bottom .midi-sidebar__item {
+  width: auto;
 }
 
 .panel-resizer {
@@ -241,16 +264,24 @@ main {
     display: none;
   }
 
-  .midi-panel {
+  .midi-panel--top {
     position: static;
     width: 100%;
     padding: 0.75rem 1rem;
   }
 
-  .midi-sidebar {
+  .midi-panel--bottom {
+    padding: 1rem 1rem 0;
+  }
+
+  .midi-sidebar--top {
     flex-direction: row;
     justify-content: center;
     flex-wrap: wrap;
+    gap: 0.65rem;
+  }
+
+  .midi-sidebar--bottom {
     gap: 0.65rem;
   }
 
@@ -607,33 +638,6 @@ button.toggle.active .indicator {
   white-space: nowrap;
 }
 
-.manual-entry {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.manual-entry__input[aria-invalid="true"] {
-  border-color: #d14646;
-  box-shadow: 0 0 0 2px rgba(209, 70, 70, 0.2);
-}
-
-.manual-entry__help {
-  font-size: 0.8rem;
-  margin: 0;
-  opacity: 0.75;
-  line-height: 1.5;
-}
-
-body.dark .manual-entry__help {
-  opacity: 0.8;
-}
-
-.manual-entry__button {
-  align-self: flex-start;
-  font-weight: 600;
-}
-
 .catalog-collections {
   display: flex;
   flex-direction: column;
@@ -785,21 +789,18 @@ body.dark .manual-entry__help {
   background: var(--grid-line);
 }
 
+
 .score-viewer {
   margin-top: 1.5rem;
   border-radius: 14px;
   border: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.02);
+  background: #ffffff;
   padding: 1.5rem 1.75rem;
   min-height: 220px;
   overflow-x: auto;
   overflow-y: hidden;
   width: 100%;
   margin-left: 0;
-}
-
-body.dark .score-viewer {
-  background: rgba(255, 255, 255, 0.05);
 }
 
 .score-viewer svg {
@@ -810,11 +811,7 @@ body.dark .score-viewer {
 .score-placeholder {
   margin: 0;
   text-align: center;
-  color: rgba(0, 0, 0, 0.6);
-}
-
-body.dark .score-placeholder {
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(29, 29, 31, 0.65);
 }
 
 @media (max-width: 900px) {
@@ -846,12 +843,6 @@ body.dark .score-placeholder {
   height: 18px;
   border-radius: 50%;
   background: var(--accent);
-}
-
-.midi-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
 }
 
 .midi-panel__layout {
