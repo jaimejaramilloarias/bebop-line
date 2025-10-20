@@ -132,8 +132,6 @@ const elements = {
   midiOutput: document.getElementById("midi-output"),
   refreshMidiOutputs: document.getElementById("refresh-midi-outputs"),
   chordsContainer: document.querySelector(".captured-chords"),
-  manualNoteGroupsInput: document.getElementById("manual-note-groups"),
-  applyManualNoteGroups: document.getElementById("apply-manual-note-groups"),
   status: document.getElementById("status"),
   themeToggle: document.getElementById("theme-toggle"),
   scoreViewer: document.getElementById("score-viewer"),
@@ -1015,21 +1013,6 @@ function renderMatrix() {
 }
 
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-const NOTE_OFFSETS = {
-  c: 0,
-  d: 2,
-  e: 4,
-  f: 5,
-  g: 7,
-  a: 9,
-  b: 11
-};
-const ACCIDENTAL_OFFSETS = new Map([
-  ["#", 1],
-  ["♯", 1],
-  ["b", -1],
-  ["♭", -1]
-]);
 
 function getCssNumericValue(computedStyles, property, fallback) {
   if (!computedStyles) {
@@ -1102,7 +1085,7 @@ function updateVirtualKeyboardSelection() {
   const notes = Array.from(state.virtualKeyboardPendingNotes).sort((a, b) => a - b);
   if (!notes.length) {
     elements.virtualKeyboardSelection.textContent =
-      "Selecciona hasta cuatro notas y usa la barra espaciadora para guardar el grupo.";
+      "Selecciona tres o cuatro notas y usa la barra espaciadora para guardar el grupo.";
     return;
   }
   const names = notes.map(noteNumberToName);
@@ -1385,93 +1368,6 @@ function noteNumberToName(note) {
   return `${name}${octave}`;
 }
 
-function parseNoteToken(token) {
-  const trimmed = token.trim();
-  if (!trimmed) {
-    return null;
-  }
-  if (/^\d+$/.test(trimmed)) {
-    const numeric = Number.parseInt(trimmed, 10);
-    if (Number.isFinite(numeric) && numeric >= 0 && numeric <= 127) {
-      return numeric;
-    }
-    return null;
-  }
-  const match = trimmed.match(/^([A-Ga-g])([#b♯♭]?)(-?\d{1,2})$/);
-  if (!match) {
-    return null;
-  }
-  const [, letter, accidental = "", octaveText] = match;
-  const base = NOTE_OFFSETS[letter.toLowerCase()];
-  if (base === undefined) {
-    return null;
-  }
-  const accidentalOffset = ACCIDENTAL_OFFSETS.get(accidental) ?? 0;
-  const octave = Number.parseInt(octaveText, 10);
-  if (!Number.isFinite(octave)) {
-    return null;
-  }
-  const midi = (octave + 1) * 12 + base + accidentalOffset;
-  if (!Number.isFinite(midi) || midi < 0 || midi > 127) {
-    return null;
-  }
-  return midi;
-}
-
-function parseManualNoteGroupsInput(input) {
-  const trimmed = input.trim();
-  if (!trimmed) {
-    return { success: true, chords: [] };
-  }
-  const groups = trimmed
-    .split("/")
-    .map((group) => group.trim())
-    .filter(Boolean);
-  if (!groups.length) {
-    return { success: false, message: "No se encontraron grupos válidos." };
-  }
-
-  const chords = [];
-  for (const groupText of groups) {
-    const tokens = groupText.split(/[\s,]+/).filter(Boolean);
-    if (!tokens.length) {
-      return {
-        success: false,
-        message: `El grupo "${groupText}" no contiene notas válidas.`
-      };
-    }
-    const notes = [];
-    for (const token of tokens) {
-      const midi = parseNoteToken(token);
-      if (midi === null) {
-        return {
-          success: false,
-          message: `No se reconoce la nota "${token}". Usa formatos como C4, Eb4 o 62.`
-        };
-      }
-      notes.push(midi);
-    }
-    const unique = Array.from(new Set(notes)).sort((a, b) => a - b);
-    if (unique.length < 3) {
-      return {
-        success: false,
-        message: `Cada grupo debe tener al menos 3 notas. Revisa "${groupText}".`
-      };
-    }
-    if (unique.length > 4) {
-      return {
-        success: false,
-        message: `Limita cada grupo a 4 notas como máximo. Revisa "${groupText}".`
-      };
-    }
-    const chord = unique.slice();
-    chord.voiceCount = chord.length;
-    chords.push(chord);
-  }
-
-  return { success: true, chords };
-}
-
 function buildPatternDictionaryHtml() {
   const renderPatternPreview = (pattern) => {
     const cells = pattern.values
@@ -1693,66 +1589,6 @@ function openPatternDictionaryWindow() {
   if (typeof ref.focus === "function") {
     ref.focus();
   }
-}
-
-function handleManualNoteGroupsApply() {
-  if (!elements.manualNoteGroupsInput) {
-    return;
-  }
-  const raw = elements.manualNoteGroupsInput.value || "";
-  const result = parseManualNoteGroupsInput(raw);
-  if (!result.success) {
-    elements.manualNoteGroupsInput.setAttribute("aria-invalid", "true");
-    setStatus(result.message);
-    return;
-  }
-
-  elements.manualNoteGroupsInput.removeAttribute("aria-invalid");
-  stopPlayback(false);
-
-  if (!result.chords.length) {
-    clearChords();
-    setStatus("Entrada manual vacía. Acordes borrados.");
-    return;
-  }
-
-  if (state.midiArmed) {
-    void setMidiLearnState(false, { skipGenerate: true });
-  }
-
-  state.chords = result.chords;
-  state.replacementIndex = null;
-  state.pendingReplacementDisarm = false;
-  state.lastCapturedChordIndex = null;
-  renderChords();
-
-  const lineResult = generateLineFromCapturedChords();
-  if (lineResult.success) {
-    setStatus(`Se cargaron ${result.chords.length} grupos manuales.`);
-    return;
-  }
-  updatePatternGroups([]);
-  state.midiLine = EMPTY_MIDI_LINE;
-  if (lineResult.reason === "invalid") {
-    setStatus("No fue posible generar una línea válida con los grupos escritos.");
-    return;
-  }
-  setStatus("No hay grupos manuales para generar la línea.");
-}
-
-function handleManualNoteGroupsInputChange() {
-  if (!elements.manualNoteGroupsInput) {
-    return;
-  }
-  elements.manualNoteGroupsInput.removeAttribute("aria-invalid");
-}
-
-function handleManualNoteGroupsKeydown(event) {
-  if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey)) {
-    return;
-  }
-  event.preventDefault();
-  handleManualNoteGroupsApply();
 }
 
 function handleCatalogDragStart(event, patternId) {
@@ -2063,9 +1899,6 @@ function clearChords() {
   updatePatternGroups([]);
   state.midiLine = EMPTY_MIDI_LINE;
   state.lastCaptureTime = 0;
-  if (elements.manualNoteGroupsInput) {
-    elements.manualNoteGroupsInput.removeAttribute("aria-invalid");
-  }
   setStatus("Acordes borrados.");
 }
 
@@ -2821,13 +2654,6 @@ function attachEvents() {
   }
   if (elements.refreshMidiOutputs) {
     elements.refreshMidiOutputs.addEventListener("click", () => refreshMidiOutputs(true));
-  }
-  if (elements.applyManualNoteGroups) {
-    elements.applyManualNoteGroups.addEventListener("click", handleManualNoteGroupsApply);
-  }
-  if (elements.manualNoteGroupsInput) {
-    elements.manualNoteGroupsInput.addEventListener("input", handleManualNoteGroupsInputChange);
-    elements.manualNoteGroupsInput.addEventListener("keydown", handleManualNoteGroupsKeydown);
   }
   document.addEventListener("keydown", handleGlobalKeydown);
   if (elements.panelResizers.length) {

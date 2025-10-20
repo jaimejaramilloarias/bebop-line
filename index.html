@@ -20,8 +20,8 @@
     </header>
 
     <main>
-      <section class="midi-panel" aria-label="Controles MIDI">
-        <div class="midi-sidebar" role="menubar">
+      <section class="midi-panel midi-panel--top" aria-label="Controles MIDI">
+        <div class="midi-sidebar midi-sidebar--top" role="menubar">
           <div class="midi-sidebar__item" role="none">
             <button
               id="open-pattern-dictionary"
@@ -48,27 +48,6 @@
                 <span class="state" aria-live="polite">(apagado)</span>
                 <span class="indicator" aria-hidden="true"></span>
               </button>
-              <div class="manual-entry" role="group" aria-labelledby="manual-entry-label">
-                <label id="manual-entry-label" for="manual-note-groups">Grupos manuales</label>
-                <textarea
-                  id="manual-note-groups"
-                  class="manual-entry__input"
-                  rows="3"
-                  placeholder="C4 E4 G4 B4 / D4 F4 A4 C5"
-                  aria-describedby="manual-entry-help"
-                ></textarea>
-                <p id="manual-entry-help" class="manual-entry__help">
-                  Separa cada acorde con "/" y usa notas como C4, Eb4 o 62.
-                </p>
-                <button
-                  id="apply-manual-note-groups"
-                  type="button"
-                  class="manual-entry__button"
-                  title="Interpretar los grupos escritos y generar la línea"
-                >
-                  Cargar grupos
-                </button>
-              </div>
             </div>
           </div>
 
@@ -128,46 +107,6 @@
               <button id="clear-chords" title="Eliminar acordes capturados">Borrar acordes</button>
             </div>
           </div>
-
-          <div class="midi-sidebar__item" role="none">
-            <button class="midi-icon" aria-label="Transposición" role="menuitem" type="button">📈</button>
-            <div class="midi-flyout" role="group" aria-label="Transposición">
-              <button type="button" id="transpose-down-octave" title="Bajar una octava">−8va</button>
-              <span id="transpose-value" class="transpose-value" aria-live="polite"></span>
-              <button type="button" id="transpose-up-octave" title="Subir una octava">+8va</button>
-              <button type="button" id="transpose-down-semitone" title="Bajar un semitono">−1</button>
-              <button type="button" id="transpose-reset" class="transpose-reset" title="Restablecer transposición">
-                Reset
-              </button>
-              <button type="button" id="transpose-up-semitone" title="Subir un semitono">+1</button>
-            </div>
-          </div>
-
-          <div class="midi-sidebar__item" role="none">
-            <button class="midi-icon" aria-label="Salida MIDI" role="menuitem" type="button">🔈</button>
-            <div class="midi-flyout" role="group" aria-label="Salida MIDI">
-              <label for="midi-output" title="Enviar la reproducción a un puerto MIDI externo">Destino</label>
-              <div class="midi-output__controls">
-                <select
-                  id="midi-output"
-                  title="Seleccionar un puerto MIDI de salida para reproducir la línea"
-                  aria-label="Puerto MIDI de salida"
-                >
-                  <option value="">Reproducción interna (WebAudio)</option>
-                </select>
-                <button id="refresh-midi-outputs" title="Actualizar la lista de puertos MIDI disponibles">
-                  Actualizar
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div class="midi-sidebar__item" role="none">
-            <button class="midi-icon" aria-label="Acordes capturados" role="menuitem" type="button">🎹</button>
-            <div class="midi-flyout midi-flyout--wide" role="group" aria-label="Acordes capturados">
-              <div class="captured-chords" aria-live="polite" aria-label="Acordes capturados"></div>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -205,16 +144,56 @@
       ></div>
     </main>
 
+    <section class="midi-panel midi-panel--bottom" aria-label="Ajustes adicionales">
+      <div class="midi-sidebar midi-sidebar--bottom" role="menubar">
+        <div class="midi-sidebar__item" role="none">
+          <button class="midi-icon" aria-label="Transposición" role="menuitem" type="button">📈</button>
+          <div class="midi-flyout" role="group" aria-label="Transposición">
+            <button type="button" id="transpose-down-octave" title="Bajar una octava">−8va</button>
+            <span id="transpose-value" class="transpose-value" aria-live="polite"></span>
+            <button type="button" id="transpose-up-octave" title="Subir una octava">+8va</button>
+            <button type="button" id="transpose-down-semitone" title="Bajar un semitono">−1</button>
+            <button type="button" id="transpose-reset" class="transpose-reset" title="Restablecer transposición">
+              Reset
+            </button>
+            <button type="button" id="transpose-up-semitone" title="Subir un semitono">+1</button>
+          </div>
+        </div>
+
+        <div class="midi-sidebar__item" role="none">
+          <button class="midi-icon" aria-label="Salida MIDI" role="menuitem" type="button">🔈</button>
+          <div class="midi-flyout" role="group" aria-label="Salida MIDI">
+            <label for="midi-output" title="Enviar la reproducción a un puerto MIDI externo">Destino</label>
+            <div class="midi-output__controls">
+              <select
+                id="midi-output"
+                title="Seleccionar un puerto MIDI de salida para reproducir la línea"
+                aria-label="Puerto MIDI de salida"
+              >
+                <option value="">Reproducción interna (WebAudio)</option>
+              </select>
+              <button id="refresh-midi-outputs" title="Actualizar la lista de puertos MIDI disponibles">
+                Actualizar
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="midi-sidebar__item" role="none">
+          <button class="midi-icon" aria-label="Acordes capturados" role="menuitem" type="button">🎹</button>
+          <div class="midi-flyout midi-flyout--wide" role="group" aria-label="Acordes capturados">
+            <div class="captured-chords" aria-live="polite" aria-label="Acordes capturados"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section
       class="virtual-keyboard"
       aria-label="Teclado virtual para introducir acordes"
     >
       <div class="virtual-keyboard__header">
         <div class="section-title">Teclado virtual</div>
-        <p class="virtual-keyboard__help" id="virtual-keyboard-instructions">
-          Haz clic en las teclas para seleccionar notas. Pulsa la barra espaciadora
-          para guardar el grupo actual y separar acordes.
-        </p>
       </div>
       <div
         id="virtual-keyboard-selection"
@@ -224,7 +203,7 @@
       <div
         class="virtual-keyboard__scroller"
         role="group"
-        aria-describedby="virtual-keyboard-instructions virtual-keyboard-selection"
+        aria-describedby="virtual-keyboard-selection"
       >
         <div class="virtual-keyboard__keys">
           <div class="virtual-keyboard__white-keys"></div>
