@@ -1242,6 +1242,8 @@ function buildVirtualKeyboard() {
 
   const whiteFragment = document.createDocumentFragment();
   const blackFragment = document.createDocumentFragment();
+  const whiteKeys = [];
+  const pendingBlackKeys = [];
 
   let whiteKeyCount = 0;
   for (let note = VIRTUAL_KEYBOARD_FIRST_NOTE; note <= VIRTUAL_KEYBOARD_LAST_NOTE; note++) {
@@ -1274,6 +1276,7 @@ function buildVirtualKeyboard() {
       }
 
       whiteFragment.appendChild(key);
+      whiteKeys.push(key);
       state.virtualKeyboardKeyMap.set(note, key);
       whiteKeyCount += 1;
       continue;
@@ -1292,18 +1295,34 @@ function buildVirtualKeyboard() {
       toggleVirtualKeyboardNote(note);
     });
 
-    const precedingIndex = Math.max(0, whiteKeyCount - 1);
-    const previousStart = precedingIndex * whiteWidth;
-    const nextStart = (precedingIndex + 1) * whiteWidth;
-    const center = previousStart + (nextStart - previousStart) / 2;
-    const left = Math.max(0, Math.round(center - blackWidth / 2));
+    pendingBlackKeys.push({
+      note,
+      key,
+      precedingIndex: Math.max(0, whiteKeyCount - 1),
+      followingIndex: whiteKeyCount
+    });
+  }
+
+  elements.virtualKeyboardWhiteKeys.appendChild(whiteFragment);
+
+  for (const { note, key, precedingIndex, followingIndex } of pendingBlackKeys) {
+    const previousWhite = whiteKeys[precedingIndex] || null;
+    const nextWhite = whiteKeys[followingIndex] || null;
+
+    let boundary = 0;
+    if (nextWhite) {
+      boundary = nextWhite.offsetLeft;
+    } else if (previousWhite) {
+      boundary = previousWhite.offsetLeft + previousWhite.offsetWidth;
+    }
+
+    const left = Math.max(0, Math.round(boundary - blackWidth / 2));
     key.style.left = `${left}px`;
 
     blackFragment.appendChild(key);
     state.virtualKeyboardKeyMap.set(note, key);
   }
 
-  elements.virtualKeyboardWhiteKeys.appendChild(whiteFragment);
   elements.virtualKeyboardBlackKeys.appendChild(blackFragment);
 
   if (elements.virtualKeyboardKeysWrapper) {
