@@ -448,18 +448,26 @@ function updatePatternGroups(groups) {
   renderMatrix();
 }
 
+function createNoteEntriesForPattern(pattern, chord, transposeSemitones = state.transposeSemitones) {
+  if (!pattern) {
+    return [];
+  }
+  const sortedChord = getSortedChord(chord || DEFAULT_CHORD);
+  return pattern.values.map((voice) => {
+    const note = getNoteFromSortedChordVoice(voice, sortedChord);
+    const transposed = clamp(note + transposeSemitones, 0, 127);
+    return { note: transposed, voice };
+  });
+}
+
 function rebuildLineNotes() {
   const noteEntries = [];
   const totalGroups = state.patternGroups.length;
   for (let i = 0; i < totalGroups; i++) {
     const pattern = state.patternGroups[i];
     const chord = state.chords[i] || DEFAULT_CHORD;
-    const sortedChord = getSortedChord(chord);
-    pattern.values.forEach((voice) => {
-      const note = getNoteFromSortedChordVoice(voice, sortedChord);
-      const transposed = clamp(note + state.transposeSemitones, 0, 127);
-      noteEntries.push({ note: transposed, voice });
-    });
+    const entries = createNoteEntriesForPattern(pattern, chord);
+    noteEntries.push(...entries);
   }
   state.lineNotes = noteEntries.map((entry) => entry.note);
   state.midiLine = convertLineToMidi(noteEntries);
@@ -540,6 +548,46 @@ function renderMatrix() {
       groupEl.addEventListener("dragover", handleMatrixDragOver);
       groupEl.addEventListener("dragleave", handleMatrixDragLeave);
       groupEl.addEventListener("drop", handleMatrixDrop);
+
+      const playButton = document.createElement("button");
+      playButton.type = "button";
+      playButton.className = "matrix-group-button matrix-group-button--play";
+      playButton.title = `Reproducir patrón ${pattern.id}`;
+      playButton.setAttribute(
+        "aria-label",
+        `Reproducir patrón ${pattern.id} del compás ${j + 1}`
+      );
+      playButton.draggable = false;
+      playButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        playPatternAtIndex(j);
+      });
+      const playIcon = document.createElement("span");
+      playIcon.className = "matrix-group-button-icon";
+      playIcon.setAttribute("aria-hidden", "true");
+      playIcon.textContent = "▶";
+      playButton.appendChild(playIcon);
+      groupEl.appendChild(playButton);
+
+      const regenerateButton = document.createElement("button");
+      regenerateButton.type = "button";
+      regenerateButton.className = "matrix-group-button matrix-group-button--shuffle";
+      regenerateButton.title = `Generar variación para el compás ${j + 1}`;
+      regenerateButton.setAttribute(
+        "aria-label",
+        `Generar una variación aleatoria para el compás ${j + 1}`
+      );
+      regenerateButton.draggable = false;
+      regenerateButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        regeneratePatternAtIndex(j);
+      });
+      const regenerateIcon = document.createElement("span");
+      regenerateIcon.className = "matrix-group-button-icon";
+      regenerateIcon.setAttribute("aria-hidden", "true");
+      regenerateIcon.textContent = "⟳";
+      regenerateButton.appendChild(regenerateIcon);
+      groupEl.appendChild(regenerateButton);
 
       pattern.values.forEach((voice) => {
         const cell = document.createElement("div");
@@ -910,22 +958,34 @@ function stopPlayback(userInitiated = true) {
   }
 }
 
-function playLine() {
-  const midiLine = state.midiLine;
+function playMidiLineWithStatus(
+  midiLine,
+  { emptyStatus, midiStartStatus, audioStartStatus, endStatus } = {}
+) {
   if (!midiLine.events.length) {
-    setStatus("No hay línea para reproducir.");
+    setStatus(emptyStatus ?? "No hay línea para reproducir.");
     return;
   }
   const bpm = Number(elements.tempo.value) || DEFAULT_BPM;
   stopPlayback(false);
   const midiOutput = getSelectedMidiOutput();
+  const resolvedEndStatus = endStatus ?? "Reproducción finalizada.";
+
   if (midiOutput) {
     setPlaybackState(true);
     scheduleMidiPlayback(midiOutput, midiLine, bpm, () => {
       setPlaybackState(false);
-      setStatus("Reproducción finalizada.");
+      if (resolvedEndStatus) {
+        setStatus(resolvedEndStatus);
+      }
     });
-    setStatus(`Reproduciendo vía MIDI en ${midiOutput.name}.`);
+    const startMessage =
+      typeof midiStartStatus === "function"
+        ? midiStartStatus(midiOutput.name)
+        : midiStartStatus ?? `Reproduciendo vía MIDI en ${midiOutput.name}.`;
+    if (startMessage) {
+      setStatus(startMessage);
+    }
     return;
   }
 
@@ -955,11 +1015,124 @@ function playLine() {
   const totalDurationSeconds = maxEndSeconds;
   const finishTimeout = setTimeout(() => {
     setPlaybackState(false);
-    setStatus("Reproducción finalizada.");
+    if (resolvedEndStatus) {
+      setStatus(resolvedEndStatus);
+    }
   }, Math.max(0, Math.round(totalDurationSeconds * 1000)) + 20);
   state.scheduledTimeouts.push(finishTimeout);
   setPlaybackState(true);
-  setStatus("Reproduciendo línea.");
+  const startMessage =
+    typeof audioStartStatus === "function"
+      ? audioStartStatus()
+      : audioStartStatus ?? "Reproduciendo línea.";
+  if (startMessage) {
+    setStatus(startMessage);
+  }
+}
+
+function playPatternAtIndex(index) {
+  if (!Number.isInteger(index) || index < 0 || index >= state.patternGroups.length) {
+    setStatus("No hay patrón disponible para reproducir en ese compás.");
+    return;
+  }
+  const pattern = state.patternGroups[index];
+  if (!pattern) {
+    setStatus("No hay patrón disponible para reproducir en ese compás.");
+    return;
+  }
+  const chord = state.chords[index] || DEFAULT_CHORD;
+  const entries = createNoteEntriesForPattern(pattern, chord);
+  if (!entries.length) {
+    setStatus(`No hay notas disponibles para el compás ${index + 1}.`);
+    return;
+  }
+  const midiLine = convertLineToMidi(entries);
+  const ordinal = index + 1;
+  const patternId = pattern.id;
+  playMidiLineWithStatus(midiLine, {
+    emptyStatus: `No hay notas disponibles para el compás ${ordinal}.`,
+    midiStartStatus: (outputName) =>
+      `Reproduciendo patrón ${patternId} del compás ${ordinal} vía MIDI en ${outputName}.`,
+    audioStartStatus: () => `Reproduciendo patrón ${patternId} del compás ${ordinal}.`,
+    endStatus: `Reproducción del patrón ${patternId} del compás ${ordinal} finalizada.`
+  });
+}
+
+function playLine() {
+  playMidiLineWithStatus(state.midiLine);
+}
+
+function regeneratePatternAtIndex(index) {
+  if (!Number.isInteger(index) || index < 0 || index >= state.patternGroups.length) {
+    setStatus("No hay patrón disponible para regenerar en ese compás.");
+    return;
+  }
+
+  const currentPattern = state.patternGroups[index];
+  const chord = state.chords[index] || DEFAULT_CHORD;
+  const pool = getPatternPoolForChord(chord);
+  if (!pool.length) {
+    setStatus("No hay variaciones disponibles para este compás.");
+    return;
+  }
+
+  stopPlayback(false);
+
+  const previousPattern = index > 0 ? state.patternGroups[index - 1] : null;
+  const previousChord = index > 0 ? state.chords[index - 1] || DEFAULT_CHORD : null;
+  const nextPattern = index < state.patternGroups.length - 1 ? state.patternGroups[index + 1] : null;
+  const nextChord = index < state.patternGroups.length - 1 ? state.chords[index + 1] || DEFAULT_CHORD : null;
+
+  const validPatterns = pool.filter((pattern) => {
+    if (!patternFitsChord(pattern, chord)) {
+      return false;
+    }
+    if (patternHasConsecutiveDuplicateNotes(pattern, chord)) {
+      return false;
+    }
+    if (previousPattern) {
+      const prevLastVoice = previousPattern.values[previousPattern.values.length - 1];
+      const prevLastNote = getNoteFromChordVoice(prevLastVoice, previousChord);
+      const firstNote = getNoteFromChordVoice(pattern.values[0], chord);
+      if (prevLastNote === firstNote || !isIntervalWithinMajorSeventh(prevLastNote, firstNote)) {
+        return false;
+      }
+    }
+    if (nextPattern) {
+      const lastVoice = pattern.values[pattern.values.length - 1];
+      const lastNote = getNoteFromChordVoice(lastVoice, chord);
+      const nextFirstNote = getNoteFromChordVoice(nextPattern.values[0], nextChord);
+      if (lastNote === nextFirstNote || !isIntervalWithinMajorSeventh(lastNote, nextFirstNote)) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  if (!validPatterns.length) {
+    setStatus(`No hay variaciones compatibles para el compás ${index + 1}.`);
+    return;
+  }
+
+  const alternatives = currentPattern
+    ? validPatterns.filter((pattern) => pattern !== currentPattern)
+    : validPatterns;
+  const candidates = alternatives.length ? alternatives : validPatterns;
+  if (!candidates.length) {
+    setStatus(`No hay variaciones compatibles para el compás ${index + 1}.`);
+    return;
+  }
+
+  const replacement = randomChoice(candidates);
+  if (replacement === currentPattern) {
+    setStatus(`El compás ${index + 1} ya usa la única opción compatible disponible.`);
+    return;
+  }
+
+  state.patternGroups[index] = replacement;
+  rebuildLineNotes();
+  renderMatrix();
+  setStatus(`Variación aplicada: patrón ${replacement.id} en el compás ${index + 1}.`);
 }
 
 function handlePlaybackToggle() {
