@@ -40,7 +40,7 @@ const PATTERN_LOOKUP = new Map(ALL_PATTERNS.map((pattern) => [pattern.id, patter
 
 const DEFAULT_CHORD = [60, 64, 67, 71]; // Cmaj7
 DEFAULT_CHORD.voiceCount = DEFAULT_CHORD.length;
-const DEFAULT_BPM = 240;
+const DEFAULT_BPM = 280;
 
 const TICKS_PER_QUARTER = 480;
 const TICKS_PER_EIGHTH = TICKS_PER_QUARTER / 2;
@@ -51,7 +51,7 @@ const VELOCITY_BY_VOICE = {
   3: 110,
   4: 127
 };
-const DEFAULT_SWING_PERCENT = 0;
+const DEFAULT_SWING_PERCENT = 28;
 const TRANSPOSE_LIMIT = 36;
 const SCORE_PLACEHOLDER_MESSAGE = "Captura acordes con MIDI Learn para generar la partitura.";
 
