@@ -80,7 +80,7 @@ main {
   display: grid;
   column-gap: 0;
   row-gap: 2rem;
-  grid-template-columns: var(--midi-panel-width) var(--panel-divider-width) minmax(0, 1fr);
+  grid-template-columns: var(--midi-panel-width) var(--panel-divider-width) minmax(0, 1fr) var(--panel-divider-width);
   align-items: start;
 }
 
@@ -113,6 +113,10 @@ main {
   cursor: col-resize;
   padding: 0 0.25rem;
   touch-action: none;
+}
+
+.panel-resizer--right {
+  grid-column: 4;
 }
 
 .panel-resizer::before {

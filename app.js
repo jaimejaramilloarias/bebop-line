@@ -103,7 +103,7 @@ const state = {
 const elements = {
   layout: document.querySelector("main"),
   midiPanel: document.querySelector(".midi-panel"),
-  panelResizer: document.querySelector(".panel-resizer"),
+  panelResizers: Array.from(document.querySelectorAll(".panel-resizer")),
   visualizations: document.querySelector(".visualizations"),
   catalog: document.querySelector(".catalog-collections"),
   matrix: document.querySelector(".matrix"),
@@ -194,7 +194,7 @@ function setMidiPanelWidth(width) {
   const layoutWidth = elements.layout.clientWidth || 0;
   let maxWidth = MIDI_PANEL_MAX_WIDTH;
   if (layoutWidth) {
-    const maxByLayout = layoutWidth - VISUALIZATIONS_MIN_WIDTH - PANEL_DIVIDER_WIDTH;
+    const maxByLayout = layoutWidth - VISUALIZATIONS_MIN_WIDTH - PANEL_DIVIDER_WIDTH * 2;
     if (Number.isFinite(maxByLayout)) {
       maxWidth = Math.max(MIDI_PANEL_MIN_WIDTH, Math.min(MIDI_PANEL_MAX_WIDTH, maxByLayout));
     }
@@ -213,13 +213,17 @@ function refreshLayoutAfterResize() {
 let resizeAnimationFrame = null;
 
 function handlePanelResizePointerDown(event) {
+  const resizer = event.currentTarget;
+  if (!resizer) {
+    return;
+  }
   if (event.button !== undefined && event.button !== 0 && event.pointerType === "mouse") {
     return;
   }
   if (isSingleColumnLayout()) {
     return;
   }
-  if (!elements.panelResizer || !elements.midiPanel || !elements.layout) {
+  if (!elements.panelResizers.length || !elements.midiPanel || !elements.layout) {
     return;
   }
   if (typeof window === "undefined") {
@@ -231,10 +235,10 @@ function handlePanelResizePointerDown(event) {
   const startX = event.clientX;
   const pointerId = event.pointerId;
 
-  elements.panelResizer.classList.add("panel-resizer--active");
-  if (typeof elements.panelResizer.setPointerCapture === "function") {
+  resizer.classList.add("panel-resizer--active");
+  if (typeof resizer.setPointerCapture === "function") {
     try {
-      elements.panelResizer.setPointerCapture(pointerId);
+      resizer.setPointerCapture(pointerId);
     } catch (_) {
       // ignore
     }
@@ -246,12 +250,12 @@ function handlePanelResizePointerDown(event) {
   };
 
   const stop = () => {
-    if (elements.panelResizer.classList.contains("panel-resizer--active")) {
-      elements.panelResizer.classList.remove("panel-resizer--active");
+    if (resizer.classList.contains("panel-resizer--active")) {
+      resizer.classList.remove("panel-resizer--active");
     }
-    if (typeof elements.panelResizer.releasePointerCapture === "function") {
+    if (typeof resizer.releasePointerCapture === "function") {
       try {
-        elements.panelResizer.releasePointerCapture(pointerId);
+        resizer.releasePointerCapture(pointerId);
       } catch (_) {
         // ignore
       }
@@ -2018,9 +2022,11 @@ function attachEvents() {
     elements.refreshMidiOutputs.addEventListener("click", () => refreshMidiOutputs(true));
   }
   document.addEventListener("keydown", handleGlobalKeydown);
-  if (elements.panelResizer) {
-    elements.panelResizer.addEventListener("pointerdown", handlePanelResizePointerDown);
-    elements.panelResizer.addEventListener("dblclick", handlePanelResizeDoubleClick);
+  if (elements.panelResizers.length) {
+    elements.panelResizers.forEach((resizer) => {
+      resizer.addEventListener("pointerdown", handlePanelResizePointerDown);
+      resizer.addEventListener("dblclick", handlePanelResizeDoubleClick);
+    });
   }
   if (typeof window !== "undefined") {
     window.addEventListener("resize", handleWindowResize);
